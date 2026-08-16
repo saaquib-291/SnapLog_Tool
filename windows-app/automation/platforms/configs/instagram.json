@@ -1,0 +1,56 @@
+{
+  "platform": "instagram",
+  "os": "windows",
+  "login_url": "https://www.instagram.com/accounts/login/",
+  "sections": {
+    "timeline": {
+      "nav_selector": "svg[aria-label='Home']",
+      "list_container_selector": "main[role='main']",
+      "item_selector": "article",
+      "expand_selector": null,
+      "scroll_target": "window"
+    },
+    "posts": {
+      "nav_selector": "a[href*='/']",
+      "list_container_selector": "main[role='main']",
+      "item_selector": "article",
+      "expand_selector": null,
+      "scroll_target": "window"
+    },
+    "followers": {
+      "nav_selector": "a[href*='/followers/']",
+      "list_container_selector": "div._aano",
+      "item_selector": "div._aacl._aaco._aacw._aacx._aada._aade",
+      "expand_selector": null,
+      "scroll_target": "list_container_selector"
+    },
+    "following": {
+      "nav_selector": "a[href*='/following/']",
+      "list_container_selector": "div._aano",
+      "item_selector": "div._aacl._aaco._aacw._aacx._aada._aade",
+      "expand_selector": null,
+      "scroll_target": "list_container_selector"
+    },
+    "messages": {
+      "nav_selector": "svg[aria-label='Direct']",
+      "list_container_selector": "div.x1n2onr6",
+      "item_selector": "div.x1iyjqo2.xs83m0k.x1eu8d0j.x1w0mnap",
+      "expand_selector": null,
+      "scroll_target": "list_container_selector"
+    },
+    "friends": {
+      "nav_selector": null,
+      "list_container_selector": null,
+      "item_selector": null,
+      "expand_selector": null,
+      "scroll_target": "window"
+    },
+    "account_info": {
+      "nav_selector": "svg[aria-label='Profile']",
+      "list_container_selector": "div._aa_c",
+      "item_selector": "div._aa_c",
+      "expand_selector": null,
+      "scroll_target": "window"
+    }
+  }
+}

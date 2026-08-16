@@ -1,0 +1,56 @@
+{
+  "platform": "facebook",
+  "os": "windows",
+  "login_url": "https://www.facebook.com/",
+  "sections": {
+    "timeline": {
+      "nav_selector": "a[aria-label='Home']",
+      "list_container_selector": "div[role='main']",
+      "item_selector": "div[role='article']",
+      "expand_selector": null,
+      "scroll_target": "window"
+    },
+    "posts": {
+      "nav_selector": "a[href*='/']",
+      "list_container_selector": "div[role='main']",
+      "item_selector": "div[role='article']",
+      "expand_selector": null,
+      "scroll_target": "window"
+    },
+    "followers": {
+      "nav_selector": "a[href*='followers']",
+      "list_container_selector": "div[role='main']",
+      "item_selector": "div[role='article']",
+      "expand_selector": null,
+      "scroll_target": "list_container_selector"
+    },
+    "following": {
+      "nav_selector": "a[href*='following']",
+      "list_container_selector": "div[role='main']",
+      "item_selector": "div[role='article']",
+      "expand_selector": null,
+      "scroll_target": "list_container_selector"
+    },
+    "messages": {
+      "nav_selector": "a[aria-label='Messenger']",
+      "list_container_selector": "div[role='main']",
+      "item_selector": "div[role='article']",
+      "expand_selector": null,
+      "scroll_target": "list_container_selector"
+    },
+    "friends": {
+      "nav_selector": "a[href*='friends']",
+      "list_container_selector": "div[role='main']",
+      "item_selector": "div[role='article']",
+      "expand_selector": null,
+      "scroll_target": "list_container_selector"
+    },
+    "account_info": {
+      "nav_selector": "span[aria-label='Account']",
+      "list_container_selector": "div[role='main']",
+      "item_selector": "div[role='article']",
+      "expand_selector": null,
+      "scroll_target": "window"
+    }
+  }
+}

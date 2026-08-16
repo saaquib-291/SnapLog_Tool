@@ -1,0 +1,18 @@
+appId: com.forensic.windows-app
+productName: Social Media Forensic Tool
+directories:
+  output: build
+  resources: resources
+  build: build
+files:
+  - electron/**
+  - src/**/*
+  - public/**/*
+  - data/**/*
+  - automation/**/*
+  - report-pipeline-bridge/**/*
+  - node_modules/**/*
+  - package.json
+win:
+  target: []
+  icon: src/assets/icon.png

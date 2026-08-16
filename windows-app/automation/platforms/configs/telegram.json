@@ -1,0 +1,56 @@
+{
+  "platform": "telegram",
+  "os": "windows",
+  "login_url": "https://web.telegram.org/k/",
+  "sections": {
+    "timeline": {
+      "nav_selector": null,
+      "list_container_selector": null,
+      "item_selector": null,
+      "expand_selector": null,
+      "scroll_target": "window"
+    },
+    "posts": {
+      "nav_selector": null,
+      "list_container_selector": null,
+      "item_selector": null,
+      "expand_selector": null,
+      "scroll_target": "window"
+    },
+    "followers": {
+      "nav_selector": null,
+      "list_container_selector": null,
+      "item_selector": null,
+      "expand_selector": null,
+      "scroll_target": "window"
+    },
+    "following": {
+      "nav_selector": null,
+      "list_container_selector": null,
+      "item_selector": null,
+      "expand_selector": null,
+      "scroll_target": "window"
+    },
+    "messages": {
+      "nav_selector": "button[title='New message']",
+      "list_container_selector": "div.cols-part",
+      "item_selector": "div.chatlist-chat",
+      "expand_selector": null,
+      "scroll_target": "list_container_selector"
+    },
+    "friends": {
+      "nav_selector": null,
+      "list_container_selector": null,
+      "item_selector": null,
+      "expand_selector": null,
+      "scroll_target": "window"
+    },
+    "account_info": {
+      "nav_selector": "a[href*='/settings']",
+      "list_container_selector": "div.ui-side-panel",
+      "item_selector": "div.ui-side-panel",
+      "expand_selector": null,
+      "scroll_target": "window"
+    }
+  }
+}

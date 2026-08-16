@@ -1,0 +1,56 @@
+{
+  "platform": "twitter",
+  "os": "windows",
+  "login_url": "https://twitter.com/login",
+  "sections": {
+    "timeline": {
+      "nav_selector": "a[href='/']",
+      "list_container_selector": "div[aria-label='Timeline: Home']",
+      "item_selector": "article[data-testid='tweet']",
+      "expand_selector": null,
+      "scroll_target": "window"
+    },
+    "posts": {
+      "nav_selector": "a[href='/']",
+      "list_container_selector": "div[aria-label='Timeline: Home']",
+      "item_selector": "article[data-testid='tweet']",
+      "expand_selector": null,
+      "scroll_target": "window"
+    },
+    "followers": {
+      "nav_selector": "a[href*='/followers']",
+      "list_container_selector": "div[aria-label='Timeline: Followers']",
+      "item_selector": "div[data-testid='UserCell']",
+      "expand_selector": null,
+      "scroll_target": "list_container_selector"
+    },
+    "following": {
+      "nav_selector": "a[href*='/following']",
+      "list_container_selector": "div[aria-label='Timeline: Following']",
+      "item_selector": "div[data-testid='UserCell']",
+      "expand_selector": null,
+      "scroll_target": "list_container_selector"
+    },
+    "messages": {
+      "nav_selector": "a[href*='/messages']",
+      "list_container_selector": "div[aria-label='Timeline: Direct Messages']",
+      "item_selector": "div[data-testid='conversation']",
+      "expand_selector": null,
+      "scroll_target": "list_container_selector"
+    },
+    "friends": {
+      "nav_selector": null,
+      "list_container_selector": null,
+      "item_selector": null,
+      "expand_selector": null,
+      "scroll_target": "window"
+    },
+    "account_info": {
+      "nav_selector": "a[href*='/i/me']",
+      "list_container_selector": "div[data-testid='SideNav_AccountSwitcher_Button']",
+      "item_selector": "div[data-testid='SideNav_AccountSwitcher_Button']",
+      "expand_selector": null,
+      "scroll_target": "window"
+    }
+  }
+}

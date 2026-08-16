@@ -1,0 +1,56 @@
+{
+  "platform": "whatsapp",
+  "os": "windows",
+  "login_url": "https://web.whatsapp.com/",
+  "sections": {
+    "timeline": {
+      "nav_selector": null,
+      "list_container_selector": null,
+      "item_selector": null,
+      "expand_selector": null,
+      "scroll_target": "window"
+    },
+    "posts": {
+      "nav_selector": null,
+      "list_container_selector": null,
+      "item_selector": null,
+      "expand_selector": null,
+      "scroll_target": "window"
+    },
+    "followers": {
+      "nav_selector": null,
+      "list_container_selector": null,
+      "item_selector": null,
+      "expand_selector": null,
+      "scroll_target": "window"
+    },
+    "following": {
+      "nav_selector": null,
+      "list_container_selector": null,
+      "item_selector": null,
+      "expand_selector": null,
+      "scroll_target": "window"
+    },
+    "messages": {
+      "nav_selector": "div[title='New chat']",
+      "list_container_selector": "div#pane-side",
+      "item_selector": "div[role='row']",
+      "expand_selector": null,
+      "scroll_target": "list_container_selector"
+    },
+    "friends": {
+      "nav_selector": null,
+      "list_container_selector": null,
+      "item_selector": null,
+      "expand_selector": null,
+      "scroll_target": "window"
+    },
+    "account_info": {
+      "nav_selector": "div[title='Profile']",
+      "list_container_selector": "div[title='Profile']",
+      "item_selector": "div[title='Profile']",
+      "expand_selector": null,
+      "scroll_target": "window"
+    }
+  }
+}
