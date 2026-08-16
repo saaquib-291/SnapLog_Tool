@@ -86,8 +86,8 @@ fun DashboardScreen(
     if (showAddDialog) {
         AddCaseDialog(
             onDismiss = { showAddDialog = false },
-            onConfirm = { title, number, date ->
-                caseViewModel.addCase(title, number, date)
+            onConfirm = { title, number, date, sName, sType ->
+                caseViewModel.addCase(title, number, date, sName, sType)
                 showAddDialog = false
             }
         )

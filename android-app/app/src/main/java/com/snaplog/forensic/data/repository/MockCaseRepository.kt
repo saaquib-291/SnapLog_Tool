@@ -11,6 +11,8 @@ class MockCaseRepository : CaseRepository {
             title = "State vs. Sharma",
             caseNumber = "FIR-2026-0451",
             date = "12 Aug 2026",
+            subjectName = "Rajesh Sharma",
+            subjectType = "Accused",
             platformsCaptured = listOf("Instagram", "WhatsApp")
         ),
         Case(
@@ -18,6 +20,8 @@ class MockCaseRepository : CaseRepository {
             title = "Cyber Fraud Investigation",
             caseNumber = "FIR-2026-0398",
             date = "05 Aug 2026",
+            subjectName = "Amit Kumar",
+            subjectType = "Victim",
             platformsCaptured = listOf("Telegram")
         ),
         Case(
@@ -25,6 +29,8 @@ class MockCaseRepository : CaseRepository {
             title = "Missing Persons - Rao",
             caseNumber = "FIR-2026-0512",
             date = "14 Aug 2026",
+            subjectName = "Suresh Rao",
+            subjectType = "Victim",
             platformsCaptured = emptyList()
         )
     )

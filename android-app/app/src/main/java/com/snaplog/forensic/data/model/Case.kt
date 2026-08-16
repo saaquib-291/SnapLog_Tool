@@ -5,5 +5,7 @@ data class Case(
     val title: String,
     val caseNumber: String,
     val date: String,
+    val subjectName: String? = null,
+    val subjectType: String? = null, // "Accused" or "Victim"
     val platformsCaptured: List<String> = emptyList()
 )

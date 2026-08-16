@@ -31,13 +31,15 @@ class CaseViewModel(
         }
     }
 
-    fun addCase(title: String, caseNumber: String, date: String) {
+    fun addCase(title: String, caseNumber: String, date: String, subjectName: String?, subjectType: String?) {
         viewModelScope.launch {
             val newCase = Case(
                 id = "CASE-${System.currentTimeMillis()}",
                 title = title,
                 caseNumber = caseNumber,
-                date = date
+                date = date,
+                subjectName = subjectName,
+                subjectType = subjectType
             )
             repository.addCase(newCase)
             loadCases()

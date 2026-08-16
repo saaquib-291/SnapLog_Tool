@@ -29,4 +29,10 @@ class CaptureViewModel(
             activePlatform = null
         }
     }
+
+    fun stopCapture() {
+        // Implementation for stopping capture if supported by repository
+        activePlatform = null
+        progress = null
+    }
 }
