@@ -1,7 +1,7 @@
 // Real capture IPC handlers that interact with the Playwright automation layer
-const browserEngine = require('../../../automation/core/browserEngine');
-const scrollUtils = require('../../../automation/core/scrollUtils');
-const captureUtils = require('../../../automation/core/captureUtils');
+const browserEngine = require('../../automation/core/browserEngine');
+const scrollUtils = require('../../automation/core/scrollUtils');
+const captureUtils = require('../../automation/core/captureUtils');
 const sqlite = require('../db/sqlite');
 const fs = require('fs').promises;
 const path = require('path');
@@ -16,7 +16,7 @@ const activeCaptures = new Map();
  */
 async function loadPlatformConfig(platform) {
   try {
-    const configPath = path.join(__dirname, '../../../automation/platforms/configs', `${platform}.json`);
+    const configPath = path.join(__dirname, '../../automation/platforms/configs', `${platform}.json`);
     const configData = await fs.readFile(configPath, 'utf8');
     return JSON.parse(configData);
   } catch (error) {
@@ -31,29 +31,93 @@ async function loadPlatformConfig(platform) {
  */
 async function handleStart(event, data) {
   const { caseId, platform } = data;
+  const sender = event.sender;
 
   // Check if already capturing this case/platform
   const captureKey = `${caseId}-${platform}`;
   if (activeCaptures.has(captureKey)) {
-    return {
-      success: false,
-      error: `Capture already in progress for case ${caseId} on platform ${platform}`
-    };
+    // Check if previous browser instance is actually dead
+    if (!browserEngine.browser || !browserEngine.page || browserEngine.page.isClosed()) {
+      activeCaptures.delete(captureKey);
+    } else {
+      return {
+        success: false,
+        error: `Capture already in progress for case ${caseId} on platform ${platform}`
+      };
+    }
   }
 
   try {
     // Load platform configuration
     const platformConfig = await loadPlatformConfig(platform);
 
+    sender.send('capture:log', {
+      caseId,
+      platform,
+      text: `[INIT] Launching persistent headed Chromium session for ${platform.toUpperCase()}...`,
+      type: 'info'
+    });
+
     // Initialize browser if not already done
     await browserEngine.launch({ headless: false });
+
+    // Setup browser / page close detection
+    const handleBrowserClosed = () => {
+      if (activeCaptures.has(captureKey)) {
+        console.log(`[CAPTURE] Browser window closed for ${captureKey}`);
+        activeCaptures.delete(captureKey);
+        try {
+          sender.send('capture:log', {
+            caseId,
+            platform,
+            text: '[BROWSER] Website window was closed. Forensic capture progress is OVER.',
+            type: 'warn'
+          });
+          sender.send('capture:browserClosed', {
+            caseId,
+            platform,
+            message: 'Website window was closed. Progress is over.'
+          });
+        } catch (_) {}
+      }
+    };
+
+    if (browserEngine.page) {
+      browserEngine.page.once('close', handleBrowserClosed);
+    }
+    if (browserEngine.browser) {
+      browserEngine.browser.once('disconnected', handleBrowserClosed);
+    }
+
+    sender.send('capture:log', {
+      caseId,
+      platform,
+      text: `[NAV] Navigating to login URL: ${platformConfig.login_url}`,
+      type: 'info'
+    });
 
     // Navigate to login URL
     await browserEngine.navigate(platformConfig.login_url);
 
-    // TODO: In a real implementation, we would wait for manual login here
-    // For now, we'll proceed immediately (in production, this should wait for user to log in)
-    await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds for manual login
+    // Retrieve credentials strictly from in-memory payload (never stored in DB)
+    let creds = data.credentials;
+
+    // Auto-fill login credentials if provided in memory
+    if (creds && creds.username) {
+      await autoFillPlatformLogin(platform, creds, sender, caseId);
+      // Immediately clear in-memory credential reference for privacy & security
+      creds = null;
+    } else {
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: '[AUTH] No credentials provided. Please log in manually in the Chromium window.',
+        type: 'info'
+      });
+    }
+
+    // Wait for authentication and session readiness (including OTP/2FA if needed)
+    await new Promise(resolve => setTimeout(resolve, 6000));
 
     // Create capture session tracking
     const captureSession = {
@@ -63,7 +127,7 @@ async function handleStart(event, data) {
       startedAt: new Date(),
       status: 'in_progress',
       screenshotsCaptured: 0,
-      totalExpected: 0, // Will be updated as we discover sections
+      totalExpected: 0,
       currentSection: null,
       stopRequested: false
     };
@@ -71,10 +135,17 @@ async function handleStart(event, data) {
     activeCaptures.set(captureKey, captureSession);
 
     // Start capturing sections in background
-    captureSections(captureSession, event.sender).catch(error => {
+    captureSections(captureSession, sender).catch(error => {
       console.error(`Capture error for ${captureKey}:`, error);
       captureSession.status = 'failed';
       captureSession.error = error.message;
+      activeCaptures.delete(captureKey);
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: `[ERROR] Capture error: ${error.message}`,
+        type: 'error'
+      });
     });
 
     return {
@@ -86,6 +157,13 @@ async function handleStart(event, data) {
     };
   } catch (error) {
     console.error(`Failed to start capture for ${caseId} on ${platform}:`, error);
+    activeCaptures.delete(captureKey);
+    sender.send('capture:log', {
+      caseId,
+      platform,
+      text: `[ERROR] Failed to start capture: ${error.message}`,
+      type: 'error'
+    });
     return {
       success: false,
       error: error.message
@@ -99,17 +177,28 @@ async function handleStart(event, data) {
  * @param {Object} sender - IPC sender for progress updates
  */
 async function captureSections(captureSession, sender) {
+  const { caseId, platform, platformConfig } = captureSession;
+  const captureKey = `${caseId}-${platform}`;
+
   try {
-    const { caseId, platform, platformConfig } = captureSession;
     const sections = platformConfig.sections || {};
 
     // Process each section
     for (const [sectionName, sectionConfig] of Object.entries(sections)) {
-      // Check if stop was requested
-      if (captureSession.stopRequested) break;
+      // Check if stop was requested or browser was closed
+      if (captureSession.stopRequested || !browserEngine.browser || !browserEngine.page || browserEngine.page.isClosed()) {
+        break;
+      }
 
       captureSession.currentSection = sectionName;
       captureSession.status = `capturing_${sectionName}`;
+
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: `[NAV] Navigating to section: ${sectionName.toUpperCase()}`,
+        type: 'info'
+      });
 
       // Navigate to section if nav_selector exists
       if (sectionConfig.nav_selector) {
@@ -118,7 +207,6 @@ async function captureSections(captureSession, sender) {
           await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for navigation
         } catch (navError) {
           console.warn(`Could not navigate to ${sectionName} using nav_selector:`, navError.message);
-          // Continue anyway - maybe we're already on the right page
         }
       }
 
@@ -130,6 +218,13 @@ async function captureSections(captureSession, sender) {
     captureSession.status = 'completed';
     captureSession.completedAt = new Date();
 
+    sender.send('capture:log', {
+      caseId,
+      platform,
+      text: `[SUCCESS] Evidence capture complete for ${platform.toUpperCase()}. Progress is over.`,
+      type: 'success'
+    });
+
     // Send completion notification
     sender.send('capture:completed', {
       caseId,
@@ -137,14 +232,28 @@ async function captureSections(captureSession, sender) {
       screenshotsCaptured: captureSession.screenshotsCaptured,
       completedAt: captureSession.completedAt.toISOString()
     });
+
+    // Clean up browser & session
+    await browserEngine.close();
+    activeCaptures.delete(captureKey);
   } catch (error) {
     captureSession.status = 'failed';
     captureSession.error = error.message;
+    activeCaptures.delete(captureKey);
     sender.send('capture:error', {
       caseId,
       platform,
       error: error.message
     });
+    sender.send('capture:log', {
+      caseId,
+      platform,
+      text: `[ERROR] ${error.message}. Progress concluded.`,
+      type: 'error'
+    });
+    try {
+      await browserEngine.close();
+    } catch (_) {}
     throw error;
   }
 }
@@ -238,7 +347,7 @@ async function takeAndSaveScreenshot(captureSession, sectionName, sequenceNumber
       section: sectionName,
       sequenceNumber: sequenceNumber,
       timestamp: timestamp,
-      baseDir: path.join(__dirname, '../../../data/captures'),
+      baseDir: path.join(__dirname, '../../data/captures'),
       caseId: captureSession.caseId,
       examinerId: 'examiner001', // In real app, this would come from auth service
     });
@@ -363,6 +472,147 @@ async function handleStop(event, data) {
       success: false,
       error: error.message
     };
+  }
+}
+
+/**
+ * Auto-fill platform credentials with cookie handling and robust multi-selector fallback
+ */
+async function autoFillPlatformLogin(platform, creds, sender, caseId) {
+  if (!browserEngine.page || !creds || !creds.username) return;
+
+  const page = browserEngine.page;
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: `[AUTH] Auto-login active: Searching for login fields for user "${creds.username}"...`,
+    type: 'info'
+  });
+
+  try {
+    // 1. Check and dismiss any Cookie / Privacy Dialogs
+    const cookieSelectors = [
+      'button:has-text("Allow all cookies")',
+      'button:has-text("Allow essential and optional cookies")',
+      'button:has-text("Decline optional cookies")',
+      'button:has-text("Only allow essential cookies")',
+      'button:has-text("Accept All")',
+      'button:has-text("Accept")',
+      'button[data-cookiebanner="accept_button"]',
+      'button._a9--',
+    ];
+
+    for (const cSel of cookieSelectors) {
+      try {
+        const cookieBtn = page.locator(cSel).first();
+        if (await cookieBtn.isVisible({ timeout: 1500 })) {
+          await cookieBtn.click();
+          sender.send('capture:log', { caseId, platform, text: '[AUTH] Dismissed cookie dialog.', type: 'info' });
+          await new Promise(r => setTimeout(r, 1000));
+          break;
+        }
+      } catch (_) {}
+    }
+
+    // 2. Identify Username Field
+    const usernameSelectors = [
+      "input[name='username']",
+      "input[name='email']",
+      "input#email",
+      "input[autocomplete='username']",
+      "input[name='text']",
+      "input[aria-label*='username' i]",
+      "input[aria-label*='email' i]",
+      "input[aria-label*='Phone' i]",
+      "input[type='email']",
+      "input[type='text']"
+    ];
+
+    let userFieldFound = false;
+    for (const uSel of usernameSelectors) {
+      try {
+        const el = page.locator(uSel).first();
+        if (await el.isVisible({ timeout: 2500 })) {
+          await el.click();
+          await new Promise(r => setTimeout(r, 200));
+          await el.fill('');
+          await el.pressSequentially(creds.username, { delay: 40 });
+          userFieldFound = true;
+          sender.send('capture:log', { caseId, platform, text: `[AUTH] Entered username "${creds.username}".`, type: 'info' });
+          break;
+        }
+      } catch (_) {}
+    }
+
+    if (!userFieldFound) {
+      sender.send('capture:log', { caseId, platform, text: `[AUTH] Could not locate username input field automatically. Please enter credentials in the browser.`, type: 'warn' });
+      return;
+    }
+
+    await new Promise(r => setTimeout(r, 600));
+
+    // 3. For Twitter / X: handle 2-step username -> Next -> password
+    if (platform === 'twitter') {
+      try {
+        const nextBtn = page.locator('button:has-text("Next"), div[role="button"]:has-text("Next")').first();
+        if (await nextBtn.isVisible({ timeout: 2000 })) {
+          await nextBtn.click();
+          sender.send('capture:log', { caseId, platform, text: `[AUTH] Clicked "Next" button for Twitter.`, type: 'info' });
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      } catch (_) {}
+    }
+
+    // 4. Identify Password Field
+    if (creds.password) {
+      const passwordSelectors = [
+        "input[name='password']",
+        "input[name='pass']",
+        "input#pass",
+        "input[type='password']",
+        "input[aria-label*='password' i]"
+      ];
+
+      for (const pSel of passwordSelectors) {
+        try {
+          const pEl = page.locator(pSel).first();
+          if (await pEl.isVisible({ timeout: 3000 })) {
+            await pEl.click();
+            await new Promise(r => setTimeout(r, 200));
+            await pEl.fill('');
+            await pEl.pressSequentially(creds.password, { delay: 40 });
+            sender.send('capture:log', { caseId, platform, text: `[AUTH] Entered password into secure field.`, type: 'info' });
+            break;
+          }
+        } catch (_) {}
+      }
+    }
+
+    await new Promise(r => setTimeout(r, 600));
+
+    // 5. Submit Login Form
+    const submitSelectors = [
+      "button[type='submit']",
+      "button[name='login']",
+      "button:has-text('Log In')",
+      "button:has-text('Log in')",
+      "button:has-text('Sign In')",
+      "div[role='button']:has-text('Log in')",
+      "form button"
+    ];
+
+    for (const sSel of submitSelectors) {
+      try {
+        const sEl = page.locator(sSel).first();
+        if (await sEl.isVisible({ timeout: 2000 })) {
+          await sEl.click();
+          sender.send('capture:log', { caseId, platform, text: `[AUTH] Clicked Log In button. Awaiting authentication / OTP...`, type: 'success' });
+          break;
+        }
+      } catch (_) {}
+    }
+  } catch (err) {
+    sender.send('capture:log', { caseId, platform, text: `[AUTH] Auto-fill note: ${err.message}`, type: 'warn' });
   }
 }
 

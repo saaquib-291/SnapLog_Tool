@@ -2,9 +2,9 @@
 
 export const captureService = {
   // Start a capture for a given case and platform
-  startCapture: async (caseId, platform) => {
+  startCapture: async (caseId, platform, credentials) => {
     if (window.electronAPI) {
-      const result = await window.electronAPI.startCapture(caseId, platform);
+      const result = await window.electronAPI.startCapture(caseId, platform, credentials);
       if (result.success) {
         return result;
       } else {

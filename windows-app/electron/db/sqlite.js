@@ -60,6 +60,7 @@ async function initDatabase() {
         description TEXT,
         victim_name TEXT,
         examiner_id TEXT,
+        target_platform TEXT,
         platforms TEXT DEFAULT '[]',
         status TEXT DEFAULT 'active',
         created_at TEXT
@@ -87,9 +88,12 @@ async function initDatabase() {
       );
     `);
 
-    // Ensure victim_name column exists if upgraded
+    // Ensure columns exist if upgraded
     try {
       db.run('ALTER TABLE cases ADD COLUMN victim_name TEXT;');
+    } catch (_) {}
+    try {
+      db.run('ALTER TABLE cases ADD COLUMN target_platform TEXT;');
     } catch (_) {}
 
     // Seed default records if empty
@@ -159,7 +163,7 @@ async function initDatabase() {
 function getAllCases() {
   if (!db) return [];
   try {
-    const stmt = db.prepare('SELECT id, title, description, victim_name as victimName, examiner_id as examinerId, platforms, created_at as createdAt FROM cases ORDER BY created_at DESC');
+    const stmt = db.prepare('SELECT id, title, description, victim_name as victimName, examiner_id as examinerId, target_platform as targetPlatform, platforms, created_at as createdAt FROM cases ORDER BY created_at DESC');
     const cases = [];
     while (stmt.step()) {
       const row = stmt.getAsObject();
@@ -184,7 +188,7 @@ function getAllCases() {
 function getCaseById(caseId) {
   if (!db) return null;
   try {
-    const stmt = db.prepare('SELECT id, title, description, victim_name as victimName, examiner_id as examinerId, platforms, created_at as createdAt FROM cases WHERE id = ?');
+    const stmt = db.prepare('SELECT id, title, description, victim_name as victimName, examiner_id as examinerId, target_platform as targetPlatform, platforms, created_at as createdAt FROM cases WHERE id = ?');
     stmt.bind([caseId]);
     let result = null;
     if (stmt.step()) {
@@ -204,39 +208,58 @@ function getCaseById(caseId) {
 }
 
 /**
- * Add a new case to SQLite & save to disk
+ * Add a new case to SQLite & save to disk (Credentials are NEVER stored)
  */
 function addCase(caseData) {
   const newId = `CASE2026-${Date.now().toString().slice(-4)}`;
+  const initialPlatforms = caseData.platforms && caseData.platforms.length > 0 
+    ? caseData.platforms 
+    : (caseData.targetPlatform ? [caseData.targetPlatform] : []);
+
   const newCase = {
     id: newId,
     title: caseData.title,
     description: caseData.description || '',
     victimName: caseData.victimName || 'Complainant / Anonymous',
     examinerId: caseData.examinerId || 'examiner001',
+    targetPlatform: caseData.targetPlatform || '',
     createdAt: new Date().toISOString(),
-    platforms: []
+    platforms: initialPlatforms
   };
 
   if (db) {
     try {
       db.run(
-        'INSERT INTO cases (id, title, description, victim_name, examiner_id, platforms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [newCase.id, newCase.title, newCase.description, newCase.victimName, newCase.examinerId, JSON.stringify(newCase.platforms), newCase.createdAt]
+        'INSERT INTO cases (id, title, description, victim_name, examiner_id, target_platform, platforms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          newCase.id,
+          newCase.title,
+          newCase.description,
+          newCase.victimName,
+          newCase.examinerId,
+          newCase.targetPlatform,
+          JSON.stringify(newCase.platforms),
+          newCase.createdAt
+        ]
       );
       persistToDisk();
-      console.log(`[SQLITE] Saved new case ${newId} with victim ${newCase.victimName} to forensic.db`);
+      console.log(`[SQLITE] Saved new case ${newId} (No passwords persisted) to forensic.db`);
     } catch (err) {
       console.error('[SQLITE] Error inserting case:', err.message);
     }
   }
 
-  // Also sync with cases.json backup
+  // Also sync with cases.json backup (sanitized - no credentials)
   try {
     let cases = [];
     if (fs.existsSync(jsonPath)) {
       cases = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
     }
+    // Ensure all existing entries in backup have no passwords
+    cases = cases.map(c => {
+      const { targetUsername, targetPassword, ...safeCase } = c;
+      return safeCase;
+    });
     cases.push(newCase);
     fs.writeFileSync(jsonPath, JSON.stringify(cases, null, 2));
   } catch (_) {}
@@ -288,11 +311,40 @@ function saveArtifact(artifact) {
   }
 }
 
+/**
+ * Delete a case and its associated artifacts from SQLite & disk
+ */
+function deleteCase(caseId) {
+  if (!db) return false;
+  try {
+    db.run('DELETE FROM cases WHERE id = ?', [caseId]);
+    db.run('DELETE FROM evidence_artifacts WHERE case_id = ?', [caseId]);
+    db.run('DELETE FROM audit_logs WHERE case_id = ?', [caseId]);
+    persistToDisk();
+
+    // Also update cases.json backup
+    if (fs.existsSync(jsonPath)) {
+      try {
+        let cases = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+        cases = cases.filter(c => c.id !== caseId);
+        fs.writeFileSync(jsonPath, JSON.stringify(cases, null, 2));
+      } catch (_) {}
+    }
+
+    console.log(`[SQLITE] Successfully deleted case ${caseId} from forensic.db`);
+    return true;
+  } catch (err) {
+    console.error('[SQLITE] Error deleting case:', err.message);
+    return false;
+  }
+}
+
 module.exports = {
   initDatabase,
   getAllCases,
   getCaseById,
   addCase,
+  deleteCase,
   saveArtifact,
   dbPath
 };

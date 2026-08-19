@@ -45,18 +45,6 @@ const Navbar = ({ title, showAddButton = false, onAddClick, showBackButton = fal
       </div>
 
       <div className="nav-actions">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginRight: '0.5rem' }}>
-          <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }}></span>
-          <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 500 }}>Air-Gapped Local</span>
-        </div>
-
-        {showAddButton && (
-          <Button size="sm" onClick={onAddClick} style={{ gap: '0.375rem' }}>
-            <Plus size={15} />
-            <span>New Case</span>
-          </Button>
-        )}
-
         <Link to="/profile" style={{ textDecoration: 'none' }}>
           <div
             style={{

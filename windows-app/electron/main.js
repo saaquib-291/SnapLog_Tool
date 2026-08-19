@@ -11,10 +11,14 @@ const sqlite = require('./db/sqlite');
 let mainWindow;
 
 function createWindow() {
+  console.log('[MAIN] Creating browser window...');
   // Create the browser window
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    title: 'Social Media Forensic Tool',
+    show: true,
+    center: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -23,8 +27,23 @@ function createWindow() {
     }
   });
 
-  // Load the React app (built version)
-  mainWindow.loadFile(path.join(__dirname, '..', 'build', 'index.html'));
+  const indexPath = path.join(__dirname, '..', 'build', 'index.html');
+  console.log('[MAIN] Loading file:', indexPath);
+  mainWindow.loadFile(indexPath);
+
+  mainWindow.once('ready-to-show', () => {
+    console.log('[MAIN] Window ready to show');
+    mainWindow.show();
+    mainWindow.focus();
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('[MAIN] WebContents did-finish-load');
+  });
+
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('[MAIN] did-fail-load:', errorCode, errorDescription);
+  });
 
   // Open DevTools in development
   if (process.env.NODE_ENV === 'development') {
@@ -33,6 +52,7 @@ function createWindow() {
 
   // Handle window closing
   mainWindow.on('closed', () => {
+    console.log('[MAIN] Window closed');
     mainWindow = null;
   });
 }
@@ -48,6 +68,7 @@ function registerIPCHandlers() {
   ipcMain.handle('cases:getAll', caseHandlers.handleGetAll);
   ipcMain.handle('cases:getById', caseHandlers.handleGetById);
   ipcMain.handle('cases:add', caseHandlers.handleAdd);
+  ipcMain.handle('cases:delete', caseHandlers.handleDelete);
 
   // Capture handlers
   ipcMain.handle('capture:start', captureHandlers.handleStart);

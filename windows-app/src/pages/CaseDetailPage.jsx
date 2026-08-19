@@ -12,7 +12,12 @@ import {
   Play,
   RotateCw,
   Hash,
-  Download
+  Download,
+  User,
+  KeyRound,
+  Eye,
+  EyeOff,
+  Trash2
 } from 'lucide-react';
 import caseService from '../services/caseService';
 import captureService from '../services/captureService';
@@ -31,6 +36,9 @@ const CaseDetailPage = () => {
   const [captureStatus, setCaptureStatus] = useState('idle'); // 'idle' | 'running' | 'completed'
   const [logs, setLogs] = useState([]);
   const [evidenceList, setEvidenceList] = useState([]);
+  const [targetUsername, setTargetUsername] = useState('');
+  const [targetPassword, setTargetPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     const fetchCase = async () => {
@@ -70,6 +78,42 @@ const CaseDetailPage = () => {
     fetchCase();
   }, [id]);
 
+  // Real-time live log & event listeners from Playwright / Electron backend
+  useEffect(() => {
+    if (!window.electronAPI) return;
+
+    const unsubLog = window.electronAPI.onCaptureLog?.((data) => {
+      if (data && data.text) {
+        addLog(data.text, data.type || 'info');
+      }
+    });
+
+    const unsubBrowserClosed = window.electronAPI.onCaptureBrowserClosed?.((data) => {
+      addLog('[BROWSER] Website window closed by user/system. Progress is OVER.', 'warn');
+      setCaptureStatus('completed');
+      setActivePlatform(null);
+    });
+
+    const unsubCompleted = window.electronAPI.onCaptureCompleted?.((data) => {
+      addLog(`[COMPLETED] Evidence capture finished for ${data.platform?.toUpperCase() || 'platform'}. Total artifacts: ${data.screenshotsCaptured || 0}. Progress is OVER.`, 'success');
+      setCaptureStatus('completed');
+      setActivePlatform(null);
+    });
+
+    const unsubError = window.electronAPI.onCaptureError?.((data) => {
+      addLog(`[ERROR] Capture halted: ${data.error}`, 'error');
+      setCaptureStatus('idle');
+      setActivePlatform(null);
+    });
+
+    return () => {
+      if (typeof unsubLog === 'function') unsubLog();
+      if (typeof unsubBrowserClosed === 'function') unsubBrowserClosed();
+      if (typeof unsubCompleted === 'function') unsubCompleted();
+      if (typeof unsubError === 'function') unsubError();
+    };
+  }, []);
+
   const addLog = (text, type = 'info') => {
     const timestamp = new Date().toLocaleTimeString();
     setLogs((prev) => [...prev, { timestamp, text, type }]);
@@ -81,63 +125,51 @@ const CaseDetailPage = () => {
     setLogs([]);
 
     addLog(`[INIT] Initializing forensic session for platform: ${platform.toUpperCase()}`, 'info');
-    addLog(`[SECURITY] Launching persistent Chromium session in headed mode for safe 2FA/OTP login...`, 'info');
 
     try {
-      await captureService.startCapture(caseData.id, platform);
+      if (window.electronAPI) {
+        addLog(`[SECURITY] Connecting to Electron automation engine...`, 'info');
+        await captureService.startCapture(caseData.id, platform, {
+          username: targetUsername.trim(),
+          password: targetPassword.trim()
+        });
+      } else {
+        // Fallback simulated progress for browser-only dev testing
+        addLog(`[SIMULATION] Running browser simulation mode...`, 'info');
+        setTimeout(() => {
+          addLog(`[AUTH] Session authenticated.`, 'success');
+        }, 1200);
 
-      // Simulated step-by-step progress
-      setTimeout(() => {
-        addLog(`[AUTH] Examiner manually authenticated session. Session token verified.`, 'success');
-      }, 1200);
+        setTimeout(() => {
+          addLog(`[NAV] Navigating to platform feed...`, 'info');
+          addLog(`[SCROLL] Auto-scrolling until DOM height stabilization detected...`, 'info');
+          addLog(`[CAPTURE] Full-page screenshot captured -> ${platform}_timeline_001.png`, 'success');
+        }, 3000);
 
-      setTimeout(() => {
-        addLog(`[NAV] Loading platform DOM selectors: automation/platforms/configs/${platform}.json`, 'info');
-        addLog(`[AUTO] Navigating to Section 1: Timeline & Bio Info...`, 'info');
-      }, 2500);
-
-      setTimeout(() => {
-        addLog(`[SCROLL] Auto-scrolling until DOM height stabilization detected...`, 'info');
-        addLog(`[CAPTURE] Full-page screenshot captured -> ${platform}_timeline_001.png`, 'success');
-        addLog(`[HASH] SHA-256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`, 'warn');
-      }, 4200);
-
-      setTimeout(() => {
-        addLog(`[AUTO] Navigating to Section 2: Followers & Connections Modal...`, 'info');
-        addLog(`[EXPAND] Auto-expanded collapsed elements ("see more", "view replies")`, 'info');
-        addLog(`[CAPTURE] Full-page screenshot captured -> ${platform}_followers_002.png`, 'success');
-        addLog(`[HASH] SHA-256: 7d1a54127b222502f5b79b5fb0803061152a44f92b37e23c65dd0e336d10e77f`, 'warn');
-      }, 6000);
-
-      setTimeout(() => {
-        addLog(`[DB] Metadata & cryptographic logs saved to local SQLite/Room database.`, 'success');
-        addLog(`[SUCCESS] Evidence capture complete for ${platform.toUpperCase()}. Ready for Panchnama PDF compile.`, 'success');
-        setCaptureStatus('completed');
-
-        // Add to evidence list
-        setEvidenceList((prev) => [
-          ...prev,
-          {
-            id: `SCR-${String(prev.length + 1).padStart(3, '0')}`,
-            section: 'Timeline / Feed',
-            platform: platform.charAt(0).toUpperCase() + platform.slice(1),
-            timestamp: new Date().toISOString(),
-            hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-            file: `${platform}_timeline_001_${Date.now()}.png`
-          },
-          {
-            id: `SCR-${String(prev.length + 2).padStart(3, '0')}`,
-            section: 'Followers / Connections',
-            platform: platform.charAt(0).toUpperCase() + platform.slice(1),
-            timestamp: new Date().toISOString(),
-            hash: '7d1a54127b222502f5b79b5fb0803061152a44f92b37e23c65dd0e336d10e77f',
-            file: `${platform}_followers_002_${Date.now()}.png`
-          }
-        ]);
-      }, 7500);
+        setTimeout(() => {
+          addLog(`[SUCCESS] Evidence capture complete for ${platform.toUpperCase()}. Progress is OVER.`, 'success');
+          setCaptureStatus('completed');
+          setActivePlatform(null);
+        }, 5500);
+      }
     } catch (err) {
       addLog(`[ERROR] Capture failed: ${err.message}`, 'error');
       setCaptureStatus('idle');
+      setActivePlatform(null);
+    }
+  };
+
+  const handleDeleteCase = async () => {
+    const confirmDelete = window.confirm(
+      `⚠️ Delete Case Confirmation\n\nAre you sure you want to permanently delete case "${caseData.title}" (${caseData.id})?\n\nAll captured evidence records, screenshots, and logs for this case will be removed from the database.`
+    );
+    if (!confirmDelete) return;
+
+    try {
+      await caseService.deleteCase(caseData.id);
+      navigate('/dashboard');
+    } catch (err) {
+      alert('Failed to delete case: ' + err.message);
     }
   };
 
@@ -234,6 +266,15 @@ const CaseDetailPage = () => {
                 <Printer size={15} />
                 <span>Print Report</span>
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDeleteCase}
+                style={{ gap: '0.375rem', color: '#ef4444', borderColor: '#fca5a5' }}
+              >
+                <Trash2 size={15} />
+                <span>Delete Case</span>
+              </Button>
             </div>
           </div>
 
@@ -252,6 +293,76 @@ const CaseDetailPage = () => {
             </div>
             <div>
               <span style={{ fontWeight: 600, color: '#0f172a' }}>Legal Standard:</span> Section 65B BSA / IEA Certified
+            </div>
+          </div>
+        </div>
+
+        {/* Target Credentials Bar - In Memory Only */}
+        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem 1.5rem', marginBottom: '1.5rem', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <KeyRound size={16} style={{ color: '#2563eb' }} />
+              <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, color: '#0f172a' }}>
+                Volatile Session Credentials (For Auto-Fill)
+              </h3>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '0.2rem 0.6rem', borderRadius: '20px', fontWeight: 600 }}>
+              <Shield size={12} />
+              <span>🔒 In-Memory Only • Never Saved to Disk or Database</span>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#475569', marginBottom: '0.25rem' }}>
+                Target Username / Handle / Email
+              </label>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <User size={14} style={{ position: 'absolute', left: '0.75rem', color: '#94a3b8' }} />
+                <input
+                  className="form-input"
+                  type="text"
+                  placeholder="e.g. @victim_user or target_email@domain.com"
+                  value={targetUsername}
+                  onChange={(e) => setTargetUsername(e.target.value)}
+                  style={{ paddingLeft: '2.25rem', fontSize: '0.8125rem' }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#475569', marginBottom: '0.25rem' }}>
+                Target Password / PIN
+              </label>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <Lock size={14} style={{ position: 'absolute', left: '0.75rem', color: '#94a3b8' }} />
+                <input
+                  className="form-input"
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="Password for automated login"
+                  value={targetPassword}
+                  onChange={(e) => setTargetPassword(e.target.value)}
+                  style={{ paddingLeft: '2.25rem', paddingRight: '2.25rem', fontSize: '0.8125rem' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    position: 'absolute',
+                    right: '0.5rem',
+                    background: 'none',
+                    border: 'none',
+                    color: '#94a3b8',
+                    cursor: 'pointer',
+                    padding: '0.25rem',
+                    display: 'flex',
+                    alignItems: 'center'
+                  }}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
             </div>
           </div>
         </div>

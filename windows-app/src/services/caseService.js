@@ -85,6 +85,23 @@ export const caseService = {
       createdAt: new Date().toISOString(),
       platforms: []
     };
+  },
+
+  // Delete a case
+  deleteCase: async (id) => {
+    if (window.electronAPI && window.electronAPI.deleteCase) {
+      const result = await window.electronAPI.deleteCase(id);
+      if (result.success) {
+        return true;
+      } else {
+        throw new Error(result.error || 'Failed to delete case');
+      }
+    }
+
+    // Fallback for browser simulation
+    await new Promise(resolve => setTimeout(resolve, 300));
+    console.log('Deleted case:', id);
+    return true;
   }
 };
 

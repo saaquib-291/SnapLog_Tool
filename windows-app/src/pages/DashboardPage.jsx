@@ -56,6 +56,21 @@ const DashboardPage = () => {
     }
   };
 
+  const handleDeleteCase = async (caseItem) => {
+    const confirmDelete = window.confirm(
+      `⚠️ Delete Case Confirmation\n\nAre you sure you want to delete case "${caseItem.title}" (${caseItem.id})?\n\nThis will remove the case and its associated evidence records from the local forensic database.`
+    );
+    if (!confirmDelete) return;
+
+    try {
+      await caseService.deleteCase(caseItem.id);
+      const updatedCases = await caseService.getCases();
+      setCases(updatedCases);
+    } catch (err) {
+      alert('Failed to delete case: ' + err.message);
+    }
+  };
+
   const handleViewCase = (caseId) => {
     navigate(`/case/${caseId}`);
   };
@@ -197,6 +212,7 @@ const DashboardPage = () => {
                   key={caseItem.id}
                   case={caseItem}
                   onClick={() => handleViewCase(caseItem.id)}
+                  onDelete={handleDeleteCase}
                 />
               ))}
             </div>

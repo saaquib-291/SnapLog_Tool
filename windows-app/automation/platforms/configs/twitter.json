@@ -2,6 +2,11 @@
   "platform": "twitter",
   "os": "windows",
   "login_url": "https://twitter.com/login",
+  "auth": {
+    "username_selector": "input[autocomplete='username'], input[name='text']",
+    "password_selector": "input[name='password']",
+    "submit_selector": "button[role='button']"
+  },
   "sections": {
     "timeline": {
       "nav_selector": "a[href='/']",

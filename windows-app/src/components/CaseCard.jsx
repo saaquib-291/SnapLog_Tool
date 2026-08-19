@@ -1,8 +1,8 @@
 import React from 'react';
-import { Calendar, User, ArrowRight, CheckCircle2, Clock, UserCheck } from 'lucide-react';
+import { Calendar, User, ArrowRight, CheckCircle2, Clock, UserCheck, Trash2 } from 'lucide-react';
 import { Badge } from './ui/table-20-utils/badge';
 
-const CaseCard = ({ case: caseItem, onClick }) => {
+const CaseCard = ({ case: caseItem, onClick, onDelete }) => {
   const platforms = caseItem.platforms || [];
   const hasPlatforms = platforms.length > 0;
 
@@ -19,19 +19,56 @@ const CaseCard = ({ case: caseItem, onClick }) => {
             )}
           </div>
 
-          <Badge variant={hasPlatforms ? 'secondary' : 'outline'} style={{ gap: '0.25rem' }}>
-            {hasPlatforms ? (
-              <>
-                <CheckCircle2 size={12} style={{ color: '#10b981' }} />
-                <span>{platforms.length} Platforms Captured</span>
-              </>
-            ) : (
-              <>
-                <Clock size={12} style={{ color: '#f59e0b' }} />
-                <span>Pending Capture</span>
-              </>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Badge variant={hasPlatforms ? 'secondary' : 'outline'} style={{ gap: '0.25rem' }}>
+              {hasPlatforms ? (
+                <>
+                  <CheckCircle2 size={12} style={{ color: '#10b981' }} />
+                  <span>{platforms.length} Platforms Captured</span>
+                </>
+              ) : (
+                <>
+                  <Clock size={12} style={{ color: '#f59e0b' }} />
+                  <span>Pending Capture</span>
+                </>
+              )}
+            </Badge>
+
+            {onDelete && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(caseItem);
+                }}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid #e2e8f0',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  padding: '0.25rem 0.375rem',
+                  borderRadius: '6px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.15s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = '#ef4444';
+                  e.currentTarget.style.borderColor = '#fca5a5';
+                  e.currentTarget.style.background = '#fef2f2';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = '#94a3b8';
+                  e.currentTarget.style.borderColor = '#e2e8f0';
+                  e.currentTarget.style.background = 'transparent';
+                }}
+                title="Delete Case"
+              >
+                <Trash2 size={13} />
+              </button>
             )}
-          </Badge>
+          </div>
         </div>
 
         <h3 className="card-title">{caseItem.title}</h3>

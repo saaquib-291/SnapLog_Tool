@@ -18,15 +18,38 @@ contextBridge.exposeInMainWorld(
     getCases: () => ipcRenderer.invoke('cases:getAll'),
     getCaseById: (id) => ipcRenderer.invoke('cases:getById', id),
     addCase: (caseData) => ipcRenderer.invoke('cases:add', caseData),
+    deleteCase: (id) => ipcRenderer.invoke('cases:delete', id),
 
     // Capture
-    startCapture: (caseId, platform) => ipcRenderer.invoke('capture:start', { caseId, platform }),
+    startCapture: (caseId, platform, credentials) => ipcRenderer.invoke('capture:start', { caseId, platform, credentials }),
     getCaptureStatus: (caseId, platform) => ipcRenderer.invoke('capture:getStatus', { caseId, platform }),
     stopCapture: (caseId, platform) => ipcRenderer.invoke('capture:stop', { caseId, platform }),
-    // Real-time progress updates
-    onCaptureProgress: (callback) => ipcRenderer.on('capture:progress', callback),
-    onCaptureCompleted: (callback) => ipcRenderer.on('capture:completed', callback),
-    onCaptureError: (callback) => ipcRenderer.on('capture:error', callback),
+    // Real-time progress & live logs
+    onCaptureProgress: (callback) => {
+      const listener = (event, data) => callback(data);
+      ipcRenderer.on('capture:progress', listener);
+      return () => ipcRenderer.removeListener('capture:progress', listener);
+    },
+    onCaptureLog: (callback) => {
+      const listener = (event, data) => callback(data);
+      ipcRenderer.on('capture:log', listener);
+      return () => ipcRenderer.removeListener('capture:log', listener);
+    },
+    onCaptureBrowserClosed: (callback) => {
+      const listener = (event, data) => callback(data);
+      ipcRenderer.on('capture:browserClosed', listener);
+      return () => ipcRenderer.removeListener('capture:browserClosed', listener);
+    },
+    onCaptureCompleted: (callback) => {
+      const listener = (event, data) => callback(data);
+      ipcRenderer.on('capture:completed', listener);
+      return () => ipcRenderer.removeListener('capture:completed', listener);
+    },
+    onCaptureError: (callback) => {
+      const listener = (event, data) => callback(data);
+      ipcRenderer.on('capture:error', listener);
+      return () => ipcRenderer.removeListener('capture:error', listener);
+    },
 
     // Reports & Panchnama PDF Generation
     generatePanchnamaPdf: (caseId, options) => ipcRenderer.invoke('reports:generatePdf', { caseId, options })

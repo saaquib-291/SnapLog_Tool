@@ -2,6 +2,11 @@
   "platform": "instagram",
   "os": "windows",
   "login_url": "https://www.instagram.com/accounts/login/",
+  "auth": {
+    "username_selector": "input[name='username']",
+    "password_selector": "input[name='password']",
+    "submit_selector": "button[type='submit']"
+  },
   "sections": {
     "timeline": {
       "nav_selector": "svg[aria-label='Home']",

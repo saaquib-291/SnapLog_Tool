@@ -45,8 +45,27 @@ async function handleAdd(event, caseData) {
   }
 }
 
+/**
+ * Handle delete case request
+ * @param {Event} event - IPC event
+ * @param {string} id - Case ID to delete
+ */
+async function handleDelete(event, id) {
+  try {
+    const deleted = sqlite.deleteCase(id);
+    if (deleted) {
+      return { success: true, message: `Case ${id} deleted successfully` };
+    } else {
+      return { success: false, error: `Failed to delete case ${id}` };
+    }
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
 module.exports = {
   handleGetAll,
   handleGetById,
-  handleAdd
+  handleAdd,
+  handleDelete
 };
