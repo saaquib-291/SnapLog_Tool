@@ -537,7 +537,7 @@ async function handleInstagramFlow(captureSession, sender) {
   });
 
   let seq = 1;
-  const maxChatSnapshots = 12;
+  const maxChatSnapshots = 6;
   for (let i = 0; i < maxChatSnapshots; i++) {
     if (captureSession.stopRequested || page.isClosed()) break;
     await takeAndSaveScreenshot(captureSession, 'instagram_chat_thread_1', seq++, sender);
@@ -555,69 +555,101 @@ async function handleInstagramFlow(captureSession, sender) {
 
   if (captureSession.stopRequested || page.isClosed()) return;
 
-  if (captureSession.stopRequested || page.isClosed()) return;
-
   // ==========================================
   // POST-CHAT: TARGET ACCOUNT PROFILE & FOLLOWERS/FOLLOWING
   // ==========================================
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[NAV] Chat capture complete. Transitioning to target person\'s profile...',
+    type: 'info'
+  });
+
   let targetContact = (captureSession.targetChatUser || '').trim();
 
-  // If not provided in input, extract the username from the active chat header
-  if (!targetContact) {
-    try {
-      targetContact = await page.evaluate(() => {
-        // Look for username link in main header
-        const links = Array.from(document.querySelectorAll('div[role="main"] header a, main header a, header a'));
-        for (const l of links) {
-          const href = (l.getAttribute('href') || '').replace(/^\/|\/$/g, '');
-          if (href && !href.includes('/') && !['direct', 'explore', 'reels', 'stories', 'accounts', 'inbox'].includes(href.toLowerCase())) {
-            return href;
-          }
-        }
-        // Fallback: examine header text
-        const titleEl = document.querySelector('div[role="main"] header span, main header span, div[role="main"] header h2');
-        if (titleEl) {
-          const text = (titleEl.innerText || '').trim().replace(/^@/, '');
-          if (text && !text.includes('\n') && text.length < 35 && !['Active', 'Seen'].includes(text)) {
-            return text.split(' ')[0];
-          }
-        }
-        return null;
-      });
-    } catch (_) {}
-  }
-
-  // Attempt navigation to target person's profile
+  // Attempt 1: Direct in-app click to open profile (View Profile button or Header Avatar)
   let onProfilePage = false;
-  if (targetContact) {
-    sender.send('capture:log', {
-      caseId,
-      platform,
-      text: `[NAV] Navigating to @${targetContact}'s profile page for forensic overview...`,
-      type: 'info'
+  try {
+    const clickedInApp = await page.evaluate(() => {
+      // 1. Check for "View profile" button in chat history pane
+      const allBtns = Array.from(document.querySelectorAll('a, button, div[role="button"]'));
+      const viewProfileBtn = allBtns.find(
+        el => (el.innerText || '').trim().toLowerCase() === 'view profile' || (el.innerText || '').trim().toLowerCase() === 'view full profile'
+      );
+      if (viewProfileBtn) {
+        viewProfileBtn.click();
+        return true;
+      }
+
+      // 2. Check for profile link in top chat header
+      const headerLink = document.querySelector('div[role="main"] header a, main header a');
+      if (headerLink) {
+        headerLink.click();
+        return true;
+      }
+
+      // 3. Check for avatar in chat header
+      const headerAvatar = document.querySelector('div[role="main"] header img, main header img');
+      if (headerAvatar) {
+        const parent = headerAvatar.closest('a, div[role="button"]');
+        if (parent) {
+          parent.click();
+          return true;
+        }
+      }
+
+      return false;
     });
 
-    try {
-      await page.goto(`https://www.instagram.com/${targetContact}/`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    if (clickedInApp) {
       await new Promise(r => setTimeout(r, 4000));
       await dismissInstagramPopups(page, sender, caseId);
-      onProfilePage = true;
-    } catch (navErr) {
-      console.warn('Direct profile goto error:', navErr.message);
+      if (page.url().includes('instagram.com/') && !page.url().includes('/direct/')) {
+        onProfilePage = true;
+      }
     }
-  }
+  } catch (_) {}
 
-  // If goto was skipped or failed, attempt clicking the profile link directly in the chat header
+  // Attempt 2: If not on profile yet, extract username from header or DOM and navigate
   if (!onProfilePage) {
-    try {
-      const headerProfileLink = page.locator('div[role="main"] header a, main header a, div[role="main"] header div[role="button"]').first();
-      if (await headerProfileLink.isVisible({ timeout: 2500 })) {
-        await headerProfileLink.click();
+    if (!targetContact) {
+      try {
+        targetContact = await page.evaluate(() => {
+          const links = Array.from(document.querySelectorAll('div[role="main"] header a, main header a, header a'));
+          for (const l of links) {
+            const href = (l.getAttribute('href') || '').replace(/^\/|\/$/g, '');
+            if (href && !href.includes('/') && !['direct', 'explore', 'reels', 'stories', 'accounts', 'inbox'].includes(href.toLowerCase())) {
+              return href;
+            }
+          }
+          const titleEl = document.querySelector('div[role="main"] header span, main header span, div[role="main"] header h2');
+          if (titleEl) {
+            const text = (titleEl.innerText || '').trim().replace(/^@/, '');
+            if (text && !text.includes('\n') && text.length < 35 && !['Active', 'Seen'].includes(text)) {
+              return text.split(' ')[0];
+            }
+          }
+          return null;
+        });
+      } catch (_) {}
+    }
+
+    if (targetContact) {
+      const cleanHandle = targetContact.toLowerCase().replace(/[^a-z0-9_.]/g, '');
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: `[NAV] Navigating directly to @${cleanHandle}'s profile...`,
+        type: 'info'
+      });
+
+      try {
+        await page.goto(`https://www.instagram.com/${cleanHandle}/`, { waitUntil: 'domcontentloaded', timeout: 15000 });
         await new Promise(r => setTimeout(r, 4000));
         await dismissInstagramPopups(page, sender, caseId);
         onProfilePage = true;
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
   }
 
   // 1. Take Profile Overview Screenshot
@@ -626,7 +658,7 @@ async function handleInstagramFlow(captureSession, sender) {
       sender.send('capture:log', {
         caseId,
         platform,
-        text: `[PROFILE] Capturing @${targetContact || 'target'} profile overview...`,
+        text: '[PROFILE] Capturing target account profile overview...',
         type: 'info'
       });
       await takeAndSaveScreenshot(captureSession, 'target_profile_overview', 1, sender);
