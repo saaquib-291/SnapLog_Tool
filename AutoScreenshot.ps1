@@ -1,6 +1,6 @@
 # Screenshot Capture Script
 param(
-    [int]$IntervalSeconds = 30,
+    [int]$IntervalSeconds = 3,
     [string]$OutputDirectory = "$HOME\Pictures\Screenshots\AutoCapture",
     [string]$FilenamePrefix = "auto_screenshot",
     [switch]$CaptureAllMonitors

@@ -4,7 +4,7 @@
 
 param(
     [string]$Url = "https://www.facebook.com",
-    [int]$IntervalSeconds = 300,  # 5 minutes default
+    [int]$IntervalSeconds = 3,  # 3 seconds default
     [string]$OutputDirectory = "$HOME\Pictures\Screenshots\WebAutoCapture",
     [string]$FilenamePrefix = "web_screenshot",
     [switch]$CaptureAllMonitors,

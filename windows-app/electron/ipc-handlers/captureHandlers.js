@@ -274,6 +274,13 @@ async function captureSection(captureSession, sectionName, sectionConfig, sender
   // Reset sequence number for this section
   let sequenceNumber = 1;
 
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: `[CAPTURE] Starting 3-second interval automated capture for ${sectionName.toUpperCase()}...`,
+    type: 'info'
+  });
+
   // Capture initial screenshot
   await takeAndSaveScreenshot(captureSession, sectionName, sequenceNumber++, sender);
 
@@ -281,41 +288,42 @@ async function captureSection(captureSession, sectionName, sectionConfig, sender
   if (sectionConfig.expand_selector) {
     try {
       await browserEngine.click(sectionConfig.expand_selector);
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for expansion
+      await new Promise(resolve => setTimeout(resolve, 3000)); // 3s wait
     } catch (expandError) {
       console.warn(`Could not expand ${sectionName}:`, expandError.message);
     }
   }
 
-  // Auto-scroll to capture all content
-  let scrollStable = false;
-  let scrollAttempts = 0;
-  const maxScrollAttempts = 20;
+  // Continuous capture every 3 seconds while auto-scrolling
+  const totalCapturesPerSection = 10;
+  for (let i = 0; i < totalCapturesPerSection; i++) {
+    if (captureSession.stopRequested || !browserEngine.browser || !browserEngine.page || browserEngine.page.isClosed()) {
+      break;
+    }
 
-  while (!scrollStable && scrollAttempts < maxScrollAttempts && !captureSession.stopRequested) {
-    scrollAttempts++;
+    // Wait exactly 3 seconds between screenshots
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    if (captureSession.stopRequested || !browserEngine.page || browserEngine.page.isClosed()) break;
 
-    // Scroll and wait for content to load
-    await scrollUtils.autoScrollUntilStable({
-      page: browserEngine.page,
-      scrollTarget: scrollTarget === 'window' ? 'window' : sectionConfig.list_container_selector || scrollTarget,
-      maxAttempts: 3,
-      delay: 1500,
-      onProgress: ({ attempt, heightChanged }) => {
-        if (heightChanged) {
-          // New content loaded, take a screenshot
-          takeAndSaveScreenshot(captureSession, sectionName, sequenceNumber++, sender);
-        }
+    // Scroll down to reveal new content/messages
+    try {
+      if (scrollTarget === 'window') {
+        await browserEngine.page.evaluate(() => window.scrollBy(0, 600));
+      } else {
+        await browserEngine.page.evaluate((selector) => {
+          const el = document.querySelector(selector);
+          if (el) el.scrollTop += 600;
+          else window.scrollBy(0, 600);
+        }, scrollTarget);
       }
-    });
+    } catch (_) {}
 
-    // Check if we've reached the bottom or no more content
-    // In a real implementation, we might check for specific end-of-content markers
-    scrollStable = scrollAttempts >= maxScrollAttempts;
+    // Take and save screenshot on every 3-second interval
+    await takeAndSaveScreenshot(captureSession, sectionName, sequenceNumber++, sender);
   }
 
   // Final screenshot after scrolling completes
-  if (!captureSession.stopRequested) {
+  if (!captureSession.stopRequested && browserEngine.page && !browserEngine.page.isClosed()) {
     await takeAndSaveScreenshot(captureSession, sectionName, sequenceNumber++, sender);
   }
 }
@@ -375,7 +383,15 @@ async function takeAndSaveScreenshot(captureSession, sectionName, sequenceNumber
       section: sectionName,
       screenshotNumber: sequenceNumber,
       filePath: filePath,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      hash: metadata.sha256_hash
+    });
+
+    sender.send('capture:log', {
+      caseId: captureSession.caseId,
+      platform: captureSession.platform,
+      text: `[CAPTURE] Snapshot #${sequenceNumber} captured (3s interval) | SHA-256: ${metadata.sha256_hash.substring(0, 16)}...`,
+      type: 'success'
     });
 
     console.log(`Saved screenshot ${sequenceNumber} for ${captureSession.caseId}/${sectionName}: ${filePath}`);

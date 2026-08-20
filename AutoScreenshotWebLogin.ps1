@@ -6,7 +6,7 @@ param(
     [string]$LoginUrl = "https://www.facebook.com",  # Login page URL
     [string]$MessagesUrl = "https://www.facebook.com/messages",  # Direct messages URL (if known)
     [string]$Platform = "facebook",  # Platform identifier for navigation logic
-    [int]$IntervalSeconds = 300,  # 5 minutes default
+    [int]$IntervalSeconds = 3,  # 3 seconds default
     [string]$OutputDirectory = "$HOME\Pictures\Screenshots\WebAutoCaptureLogin",
     [string]$FilenamePrefix = "web_screenshot",
     [switch]$CaptureAllMonitors,

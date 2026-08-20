@@ -21,7 +21,7 @@ param(
     [string]$Username = "",
     [string]$Password = "",
     [string]$Platform = "facebook",
-    [int]$IntervalSeconds = 300,  # 5 minutes default
+    [int]$IntervalSeconds = 3,  # 3 seconds default
     [string]$OutputDirectory = "$HOME\Pictures\Screenshots\WebAutoCaptureLoginAuto",
     [string]$FilenamePrefix = "web_screenshot_auto",
     [switch]$CaptureAllMonitors,
