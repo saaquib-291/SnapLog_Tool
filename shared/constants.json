@@ -1,0 +1,43 @@
+{
+  "platforms": [
+    {
+      "id": "instagram",
+      "displayName": "Instagram",
+      "supportedSections": ["timeline", "posts", "followers", "following", "account_info", "messages"]
+    },
+    {
+      "id": "facebook",
+      "displayName": "Facebook",
+      "supportedSections": ["timeline", "posts", "friends", "account_info", "messages"]
+    },
+    {
+      "id": "twitter",
+      "displayName": "Twitter / X",
+      "supportedSections": ["timeline", "posts", "followers", "following", "account_info", "messages"]
+    },
+    {
+      "id": "whatsapp",
+      "displayName": "WhatsApp Web / Mobile",
+      "supportedSections": ["messages", "account_info"]
+    },
+    {
+      "id": "telegram",
+      "displayName": "Telegram Web / Mobile",
+      "supportedSections": ["messages", "account_info"]
+    },
+    {
+      "id": "google",
+      "displayName": "Google Account / History",
+      "supportedSections": ["timeline", "account_info"]
+    }
+  ],
+  "sections": [
+    "timeline",
+    "posts",
+    "messages",
+    "friends",
+    "followers",
+    "following",
+    "account_info"
+  ]
+}
