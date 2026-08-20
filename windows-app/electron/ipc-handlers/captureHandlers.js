@@ -1035,77 +1035,89 @@ async function waitForPlatformLoginOrCaptcha(page, platform, sender, caseId) {
   while (Date.now() - startTime < maxWaitMs) {
     if (page.isClosed()) return false;
 
-    // Check platform-specific DOM state for REAL authenticated login
-    const sessionState = await page.evaluate((plat) => {
-      const text = document.body?.innerText || '';
+    let sessionState = { isLoggedIn: false };
+    let hasChallenge = false;
 
-      // 1. WhatsApp Web Login Check
-      if (plat === 'whatsapp') {
-        const isLinked = !!document.querySelector('div#pane-side, div[aria-label="Chat list"], div[role="row"]');
-        return { isLoggedIn: isLinked, hasQr: !!document.querySelector('canvas[aria-label*="Scan" i], div[data-ref]') };
-      }
+    try {
+      // Check platform-specific DOM state for REAL authenticated login
+      sessionState = await page.evaluate((plat) => {
+        const text = document.body?.innerText || '';
+        const url = window.location.href || '';
+        const pathname = window.location.pathname || '';
 
-      // 2. Telegram Web Login Check
-      if (plat === 'telegram') {
-        const isLinked = !!document.querySelector('div.chatlist-chat, div.chat-list, div.sidebar-header');
-        return { isLoggedIn: isLinked, hasQr: !!document.querySelector('canvas, div.qr-container') };
-      }
+        // 1. WhatsApp Web Login Check
+        if (plat === 'whatsapp') {
+          const isLinked = !!document.querySelector('div#pane-side, div[aria-label="Chat list"], div[role="row"]');
+          return { isLoggedIn: isLinked, hasQr: !!document.querySelector('canvas[aria-label*="Scan" i], div[data-ref]') };
+        }
 
-      // 3. Instagram Login Check
-      if (plat === 'instagram') {
-        const hasLoggedInNav = !!document.querySelector(
-          'svg[aria-label="Home"], svg[aria-label="Direct"], svg[aria-label="Messenger"], ' +
-          'a[href*="/direct/inbox/"], svg[aria-label="Explore"], svg[aria-label="New post"], ' +
-          'a[href*="/accounts/edit/"], svg[aria-label="Search"], img[alt*="profile picture" i], span:has-text("Messages")'
-        );
-        const hasSaveInfoPrompt = !!document.querySelector('button:has-text("Save info"), button:has-text("Save Info"), button:has-text("Not now"), button:has-text("Not Now"), a[href*="/direct/"]');
-        const onOneTap = window.location.href.includes('/accounts/onetap/') || window.location.href.includes('/accounts/manage_access');
-        const onFeed = (window.location.pathname === '/' || window.location.pathname === '') && !document.querySelector("input[name='password']");
-        
-        const isActuallyLoggedIn = hasLoggedInNav || hasSaveInfoPrompt || onOneTap || onFeed;
-        const errorAlert = document.querySelector('p#slfErrorAlert, div[role="alert"]')?.innerText || '';
-        const onLoginPage = !!document.querySelector("input[name='password'], input[name='username']");
-        return { isLoggedIn: isActuallyLoggedIn, errorAlert, onLoginPage };
-      }
+        // 2. Telegram Web Login Check
+        if (plat === 'telegram') {
+          const isLinked = !!document.querySelector('div.chatlist-chat, div.chat-list, div.sidebar-header');
+          return { isLoggedIn: isLinked, hasQr: !!document.querySelector('canvas, div.qr-container') };
+        }
 
-      // 4. Facebook Login Check
-      if (plat === 'facebook') {
-        const hasLoggedInNav = !!document.querySelector(
-          'div[role="navigation"] a[aria-label="Home"], a[aria-label="Facebook"], ' +
-          'div[aria-label="Account controls and settings"], a[aria-label="Messenger"]'
-        );
-        const onLoginPage = !!document.querySelector("input[name='pass'], input#email");
-        return { isLoggedIn: hasLoggedInNav, onLoginPage };
-      }
+        // 3. Instagram Login Check
+        if (plat === 'instagram') {
+          const hasLoggedInNav = !!document.querySelector(
+            'svg[aria-label="Home"], svg[aria-label="Direct"], svg[aria-label="Messenger"], ' +
+            'a[href*="/direct/inbox/"], svg[aria-label="Explore"], svg[aria-label="New post"], ' +
+            'a[href*="/accounts/edit/"], svg[aria-label="Search"], img[alt*="profile picture" i]'
+          );
+          const hasSaveInfoPrompt = !!document.querySelector('button:has-text("Save info"), button:has-text("Save Info"), button:has-text("Not now"), button:has-text("Not Now")');
+          const onOneTap = url.includes('/accounts/onetap/') || url.includes('/accounts/manage_access');
+          const onFeed = (pathname === '/' || pathname === '') && !document.querySelector("input[name='password']");
+          const hasMessages = !!document.querySelector('span:has-text("Messages"), a[href*="/direct/"]');
+          
+          const isActuallyLoggedIn = hasLoggedInNav || hasSaveInfoPrompt || onOneTap || onFeed || hasMessages;
+          const errorAlert = document.querySelector('p#slfErrorAlert, div[role="alert"]')?.innerText || '';
+          const onLoginPage = !!document.querySelector("input[name='password'], input[name='username']");
+          return { isLoggedIn: isActuallyLoggedIn, errorAlert, onLoginPage };
+        }
 
-      // 5. Twitter / X Login Check
-      if (plat === 'twitter' || plat === 'x') {
-        const hasLoggedInNav = !!document.querySelector(
-          'a[data-testid="AppTabBar_Home_Link"], a[aria-label="Direct Messages"], ' +
-          'div[data-testid="SideNav_AccountSwitcher_Button"], a[data-testid="AppTabBar_Profile_Link"]'
-        );
-        const onLoginPage = !!document.querySelector("input[autocomplete='username'], input[name='password']");
-        return { isLoggedIn: hasLoggedInNav, onLoginPage };
-      }
+        // 4. Facebook Login Check
+        if (plat === 'facebook') {
+          const hasLoggedInNav = !!document.querySelector(
+            'div[role="navigation"] a[aria-label="Home"], a[aria-label="Facebook"], ' +
+            'div[aria-label="Account controls and settings"], a[aria-label="Messenger"]'
+          );
+          const onLoginPage = !!document.querySelector("input[name='pass'], input#email");
+          return { isLoggedIn: hasLoggedInNav, onLoginPage };
+        }
 
-      // 6. Google Login Check
-      if (plat === 'google' || plat === 'gmail') {
-        const hasLoggedInNav = !!document.querySelector(
-          'a[aria-label*="Google Account" i], div[role="main"], a[href*="SignOutOptions"]'
-        );
-        const onLoginPage = !!document.querySelector("input[type='password'], input[type='email']");
-        return { isLoggedIn: hasLoggedInNav, onLoginPage };
-      }
+        // 5. Twitter / X Login Check
+        if (plat === 'twitter' || plat === 'x') {
+          const hasLoggedInNav = !!document.querySelector(
+            'a[data-testid="AppTabBar_Home_Link"], a[aria-label="Direct Messages"], ' +
+            'div[data-testid="SideNav_AccountSwitcher_Button"], a[data-testid="AppTabBar_Profile_Link"]'
+          );
+          const onLoginPage = !!document.querySelector("input[autocomplete='username'], input[name='password']");
+          return { isLoggedIn: hasLoggedInNav, onLoginPage };
+        }
 
-      return { isLoggedIn: false };
-    }, platform.toLowerCase());
+        // 6. Google Login Check
+        if (plat === 'google' || plat === 'gmail') {
+          const hasLoggedInNav = !!document.querySelector(
+            'a[aria-label*="Google Account" i], div[role="main"], a[href*="SignOutOptions"]'
+          );
+          const onLoginPage = !!document.querySelector("input[type='password'], input[type='email']");
+          return { isLoggedIn: hasLoggedInNav, onLoginPage };
+        }
+
+        return { isLoggedIn: false };
+      }, platform.toLowerCase());
+    } catch (_) {
+      // Ignore transient errors caused by navigation or page reloads
+      await new Promise(r => setTimeout(r, 1500));
+      continue;
+    }
 
     // Successfully logged in!
     if (sessionState.isLoggedIn) {
       sender.send('capture:log', {
         caseId,
         platform,
-        text: `[AUTH] Authenticated session confirmed on ${platform.toUpperCase()}! Proceeding to evidence capture.`,
+        text: `[AUTH] Authenticated session confirmed on ${platform.toUpperCase()}! Moving forward to profile capture...`,
         type: 'success'
       });
       return true;
@@ -1123,29 +1135,31 @@ async function waitForPlatformLoginOrCaptcha(page, platform, sender, caseId) {
     }
 
     // Generic CAPTCHA / 2FA / QR Challenge Detection
-    const hasChallenge = await page.evaluate(() => {
-      const text = document.body?.innerText || '';
-      return (
-        text.includes('Confirm that it’s you') ||
-        text.includes('Help us confirm it') ||
-        text.includes('Security Check') ||
-        text.includes('Enter code') ||
-        text.includes('two-factor') ||
-        text.includes('robot') ||
-        text.includes('Authenticate') ||
-        text.includes('Passkey') ||
-        text.includes('Suspicious login') ||
-        text.includes('Check your phone') ||
-        !!document.querySelector('iframe[src*="recaptcha"], iframe[src*="arkose"], iframe[src*="captcha"], #captcha, div.checkpoint')
-      );
-    });
+    try {
+      hasChallenge = await page.evaluate(() => {
+        const text = document.body?.innerText || '';
+        return (
+          text.includes('Confirm that it’s you') ||
+          text.includes('Help us confirm it') ||
+          text.includes('Security Check') ||
+          text.includes('Enter code') ||
+          text.includes('two-factor') ||
+          text.includes('robot') ||
+          text.includes('Authenticate') ||
+          text.includes('Passkey') ||
+          text.includes('Suspicious login') ||
+          text.includes('Check your phone') ||
+          !!document.querySelector('iframe[src*="recaptcha"], iframe[src*="arkose"], iframe[src*="captcha"], #captcha, div.checkpoint')
+        );
+      });
+    } catch (_) {}
 
     if (hasChallenge && !challengeNotified) {
       challengeNotified = true;
       sender.send('capture:log', {
         caseId,
         platform,
-        text: `[SECURITY] ⚠️ Verification Challenge (CAPTCHA / 2FA / Checkpoint) detected on ${platform.toUpperCase()}! Please complete verification in the opened Chromium browser window. The suite is monitoring and will resume immediately upon login.`,
+        text: `[SECURITY] ⏳ Verification Challenge (CAPTCHA / 2FA / Checkpoint) detected on ${platform.toUpperCase()}! Please solve the CAPTCHA in the opened Chromium window. The automation is waiting for you and will automatically resume once solved.`,
         type: 'warn'
       });
     }
