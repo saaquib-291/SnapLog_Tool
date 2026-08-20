@@ -1421,7 +1421,7 @@ async function autoFillPlatformLogin(platform, creds, sender, caseId) {
       } catch (_) {}
     }
 
-    // 2. Identify Username Field
+    // 2. Identify Username Field & fill React input
     const usernameSelectors = [
       "input[name='username']",
       "input[name='email']",
@@ -1439,11 +1439,12 @@ async function autoFillPlatformLogin(platform, creds, sender, caseId) {
     for (const uSel of usernameSelectors) {
       try {
         const el = page.locator(uSel).first();
-        if (await el.isVisible({ timeout: 2500 })) {
+        if (await el.isVisible({ timeout: 3000 })) {
           await el.click();
-          await new Promise(r => setTimeout(r, 200));
           await el.fill('');
-          await el.pressSequentially(creds.username, { delay: 40 });
+          await el.fill(creds.username);
+          await el.dispatchEvent('input');
+          await el.dispatchEvent('change');
           userFieldFound = true;
           sender.send('capture:log', { caseId, platform, text: `[AUTH] Entered username "${creds.username}".`, type: 'info' });
           break;
@@ -1470,7 +1471,7 @@ async function autoFillPlatformLogin(platform, creds, sender, caseId) {
       } catch (_) {}
     }
 
-    // 4. Identify Password Field
+    // 4. Identify Password Field & fill React input
     if (creds.password) {
       const passwordSelectors = [
         "input[name='password']",
@@ -1485,12 +1486,14 @@ async function autoFillPlatformLogin(platform, creds, sender, caseId) {
           const pEl = page.locator(pSel).first();
           if (await pEl.isVisible({ timeout: 3000 })) {
             await pEl.click();
-            await new Promise(r => setTimeout(r, 200));
             await pEl.fill('');
-            await pEl.pressSequentially(creds.password, { delay: 40 });
-            await new Promise(r => setTimeout(r, 400));
+            await pEl.fill(creds.password);
+            await pEl.dispatchEvent('input');
+            await pEl.dispatchEvent('change');
+            sender.send('capture:log', { caseId, platform, text: `[AUTH] Entered password into secure field. Submitting login...`, type: 'info' });
+            await new Promise(r => setTimeout(r, 500));
+            // Press Enter to submit
             await pEl.press('Enter');
-            sender.send('capture:log', { caseId, platform, text: `[AUTH] Entered password and submitted form. Awaiting session response...`, type: 'info' });
             break;
           }
         } catch (_) {}
@@ -1514,8 +1517,8 @@ async function autoFillPlatformLogin(platform, creds, sender, caseId) {
       try {
         const sEl = page.locator(sSel).first();
         if (await sEl.isVisible({ timeout: 1500 })) {
-          await sEl.click();
-          sender.send('capture:log', { caseId, platform, text: `[AUTH] Triggered login button submit.`, type: 'success' });
+          await sEl.click({ force: true });
+          sender.send('capture:log', { caseId, platform, text: `[AUTH] Clicked Log In submit button. Awaiting authentication...`, type: 'success' });
           break;
         }
       } catch (_) {}
