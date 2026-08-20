@@ -228,8 +228,13 @@ async function captureSections(captureSession, sender) {
       completedAt: captureSession.completedAt.toISOString()
     });
 
-    // Clean up browser & session
-    await browserEngine.close();
+    sender.send('capture:log', {
+      caseId,
+      platform,
+      text: `[INFO] Browser window remains open for examiner review. Click 'Stop Capture' or close the window when finished.`,
+      type: 'info'
+    });
+
     activeCaptures.delete(captureKey);
   } catch (error) {
     captureSession.status = 'failed';
@@ -246,9 +251,6 @@ async function captureSections(captureSession, sender) {
       text: `[ERROR] ${error.message}. Progress concluded.`,
       type: 'error'
     });
-    try {
-      await browserEngine.close();
-    } catch (_) {}
     throw error;
   }
 }
@@ -1054,11 +1056,16 @@ async function waitForPlatformLoginOrCaptcha(page, platform, sender, caseId) {
         const hasLoggedInNav = !!document.querySelector(
           'svg[aria-label="Home"], svg[aria-label="Direct"], svg[aria-label="Messenger"], ' +
           'a[href*="/direct/inbox/"], svg[aria-label="Explore"], svg[aria-label="New post"], ' +
-          'a[href*="/accounts/edit/"], svg[aria-label="Search"]'
+          'a[href*="/accounts/edit/"], svg[aria-label="Search"], img[alt*="profile picture" i], span:has-text("Messages")'
         );
+        const hasSaveInfoPrompt = !!document.querySelector('button:has-text("Save info"), button:has-text("Save Info"), button:has-text("Not now"), button:has-text("Not Now"), a[href*="/direct/"]');
+        const onOneTap = window.location.href.includes('/accounts/onetap/') || window.location.href.includes('/accounts/manage_access');
+        const onFeed = (window.location.pathname === '/' || window.location.pathname === '') && !document.querySelector("input[name='password']");
+        
+        const isActuallyLoggedIn = hasLoggedInNav || hasSaveInfoPrompt || onOneTap || onFeed;
         const errorAlert = document.querySelector('p#slfErrorAlert, div[role="alert"]')?.innerText || '';
         const onLoginPage = !!document.querySelector("input[name='password'], input[name='username']");
-        return { isLoggedIn: hasLoggedInNav, errorAlert, onLoginPage };
+        return { isLoggedIn: isActuallyLoggedIn, errorAlert, onLoginPage };
       }
 
       // 4. Facebook Login Check
