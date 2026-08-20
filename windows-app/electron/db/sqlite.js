@@ -189,7 +189,7 @@ function getCaseById(caseId) {
     stmt.free();
 
     if (result) {
-      const artStmt = db.prepare('SELECT id, case_id as caseId, platform, section, sequence_number as sequenceNumber, file_path as filePath, sha256_hash as hash, timestamp FROM evidence_artifacts WHERE case_id = ? ORDER BY sequence_number ASC, timestamp ASC');
+      const artStmt = db.prepare('SELECT id, case_id as caseId, platform, section, sequence_number as sequenceNumber, file_path as filePath, hash_sha256 as hash, captured_at as timestamp, integrity_status as status FROM evidence_artifacts WHERE case_id = ? ORDER BY sequence_number ASC, captured_at ASC');
       artStmt.bind([caseId]);
       const artifacts = [];
       while (artStmt.step()) {
