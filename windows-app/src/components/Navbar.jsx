@@ -13,9 +13,6 @@ const Navbar = ({ title, showAddButton = false, onAddClick, showBackButton = fal
     <nav className="app-navbar">
       <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
         <Link to="/dashboard" className="navbar-brand">
-          <div className="brand-icon">
-            <ShieldCheck size={18} />
-          </div>
           <div>
             <div style={{ fontWeight: 700, fontSize: '0.9375rem', letterSpacing: '-0.01em' }}>
               Forensic<span style={{ color: '#2563eb' }}>Capture</span>
