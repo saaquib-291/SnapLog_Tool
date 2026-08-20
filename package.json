@@ -10,9 +10,20 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "format:windows": "prettier --write \"windows-app/**/*.{js,jsx,json,css,md}\"",
-    "format:check:windows": "prettier --check \"windows-app/**/*.{js,jsx,json,css,md}\""
+    "format:check:windows": "prettier --check \"windows-app/**/*.{js,jsx,json,css,md}\"",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^17.3.0",
     "prettier": "^3.9.6"
+  },
+  "lint-staged": {
+    "*.{js,jsx,json,css,md,yml,yaml}": "prettier --write",
+    "windows-app/**/*.{js,jsx}": "eslint --fix",
+    "report-pipeline/**/*.py": [
+      "ruff format",
+      "ruff check --fix"
+    ]
   }
 }
