@@ -552,6 +552,177 @@ async function handleInstagramFlow(captureSession, sender) {
       await new Promise(r => setTimeout(r, 3000));
     }
   }
+
+  if (captureSession.stopRequested || page.isClosed()) return;
+
+  // ==========================================
+  // POST-CHAT: TARGET ACCOUNT PROFILE & FOLLOWERS/FOLLOWING
+  // ==========================================
+  let targetContact = (captureSession.targetChatUser || '').trim();
+
+  // If not provided by user, dynamically extract the contact handle from active chat header
+  if (!targetContact) {
+    try {
+      targetContact = await page.evaluate(() => {
+        const topLinks = Array.from(document.querySelectorAll('div[role="main"] header a, div[role="main"] a[role="link"]'));
+        for (const link of topLinks) {
+          const href = link.getAttribute('href') || '';
+          const match = href.match(/^\/([A-Za-z0-9_.]+)\/?$/);
+          if (match && !['direct', 'explore', 'reels', 'stories', 'accounts'].includes(match[1].toLowerCase())) {
+            return match[1];
+          }
+        }
+        return null;
+      });
+    } catch (_) {}
+  }
+
+  if (targetContact) {
+    sender.send('capture:log', {
+      caseId,
+      platform,
+      text: `[NAV] Navigating to @${targetContact}'s profile page for forensic overview...`,
+      type: 'info'
+    });
+
+    await page.goto(`https://www.instagram.com/${targetContact}/`, { waitUntil: 'domcontentloaded' });
+    await new Promise(r => setTimeout(r, 4000));
+    await dismissInstagramPopups(page, sender, caseId);
+
+    // Profile Overview Screenshot
+    await takeAndSaveScreenshot(captureSession, 'target_profile_overview', 1, sender);
+    if (captureSession.stopRequested || page.isClosed()) return;
+
+    // 1. Followers List Modal & Auto-Scroll
+    sender.send('capture:log', {
+      caseId,
+      platform,
+      text: `[FOLLOWERS] Opening @${targetContact}'s Followers list modal...`,
+      type: 'info'
+    });
+
+    let followersOpened = false;
+    try {
+      const followersLink = page.locator('a[href*="/followers/"], a[href$="/followers/"], header li:has-text("followers") a, a:has-text("followers")').first();
+      if (await followersLink.isVisible({ timeout: 3500 })) {
+        await followersLink.click();
+        followersOpened = true;
+      }
+    } catch (_) {}
+
+    if (followersOpened) {
+      await new Promise(r => setTimeout(r, 3000));
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: `[FOLLOWERS] Commencing 3-second continuous scroll & screenshot capture for Followers list...`,
+        type: 'info'
+      });
+
+      const maxFollowerSnapshots = 6;
+      for (let f = 1; f <= maxFollowerSnapshots; f++) {
+        if (captureSession.stopRequested || page.isClosed()) break;
+        await takeAndSaveScreenshot(captureSession, 'target_followers_list', f, sender);
+        if (f < maxFollowerSnapshots) {
+          sender.send('capture:log', {
+            caseId,
+            platform,
+            text: `[SCROLL] Scrolled Followers modal (Snapshot #${f} captured). Next snapshot in 3s...`,
+            type: 'info'
+          });
+          await page.evaluate(() => {
+            const dialog = document.querySelector('div[role="dialog"]');
+            if (dialog) {
+              const scrollable = Array.from(dialog.querySelectorAll('div')).find(
+                el => el.scrollHeight > el.clientHeight && el.clientHeight > 150
+              );
+              if (scrollable) scrollable.scrollTop += 550;
+            }
+          });
+          await page.mouse.move(600, 450);
+          await page.mouse.wheel(0, 550);
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      }
+
+      // Close followers modal
+      try {
+        const closeBtn = page.locator('div[role="dialog"] button, svg[aria-label="Close"]').first();
+        if (await closeBtn.isVisible({ timeout: 1500 })) {
+          await closeBtn.click();
+        } else {
+          await page.keyboard.press('Escape');
+        }
+        await new Promise(r => setTimeout(r, 1500));
+      } catch (_) {}
+    }
+
+    // 2. Following List Modal & Auto-Scroll
+    if (captureSession.stopRequested || page.isClosed()) return;
+
+    sender.send('capture:log', {
+      caseId,
+      platform,
+      text: `[FOLLOWING] Opening @${targetContact}'s Following list modal...`,
+      type: 'info'
+    });
+
+    let followingOpened = false;
+    try {
+      const followingLink = page.locator('a[href*="/following/"], a[href$="/following/"], header li:has-text("following") a, a:has-text("following")').first();
+      if (await followingLink.isVisible({ timeout: 3500 })) {
+        await followingLink.click();
+        followingOpened = true;
+      }
+    } catch (_) {}
+
+    if (followingOpened) {
+      await new Promise(r => setTimeout(r, 3000));
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: `[FOLLOWING] Commencing 3-second continuous scroll & screenshot capture for Following list...`,
+        type: 'info'
+      });
+
+      const maxFollowingSnapshots = 6;
+      for (let fo = 1; fo <= maxFollowingSnapshots; fo++) {
+        if (captureSession.stopRequested || page.isClosed()) break;
+        await takeAndSaveScreenshot(captureSession, 'target_following_list', fo, sender);
+        if (fo < maxFollowingSnapshots) {
+          sender.send('capture:log', {
+            caseId,
+            platform,
+            text: `[SCROLL] Scrolled Following modal (Snapshot #${fo} captured). Next snapshot in 3s...`,
+            type: 'info'
+          });
+          await page.evaluate(() => {
+            const dialog = document.querySelector('div[role="dialog"]');
+            if (dialog) {
+              const scrollable = Array.from(dialog.querySelectorAll('div')).find(
+                el => el.scrollHeight > el.clientHeight && el.clientHeight > 150
+              );
+              if (scrollable) scrollable.scrollTop += 550;
+            }
+          });
+          await page.mouse.move(600, 450);
+          await page.mouse.wheel(0, 550);
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      }
+
+      // Close following modal
+      try {
+        const closeBtn = page.locator('div[role="dialog"] button, svg[aria-label="Close"]').first();
+        if (await closeBtn.isVisible({ timeout: 1500 })) {
+          await closeBtn.click();
+        } else {
+          await page.keyboard.press('Escape');
+        }
+        await new Promise(r => setTimeout(r, 1500));
+      } catch (_) {}
+    }
+  }
 }
 
 /**
