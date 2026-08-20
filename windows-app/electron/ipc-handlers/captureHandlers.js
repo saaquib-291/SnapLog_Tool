@@ -1026,121 +1026,96 @@ async function waitForPlatformLoginOrCaptcha(page, platform, sender, caseId) {
   if (!page || page.isClosed()) return false;
 
   let challengeNotified = false;
-  const maxWaitMs = 240000; // 4 minutes wait time
+  let lastErrorNotified = '';
+  const maxWaitMs = 300000; // 5 minutes wait time for login / OTP / CAPTCHA
   const startTime = Date.now();
 
   while (Date.now() - startTime < maxWaitMs) {
     if (page.isClosed()) return false;
 
-    const url = page.url();
+    // Check platform-specific DOM state for REAL authenticated login
+    const sessionState = await page.evaluate((plat) => {
+      const text = document.body?.innerText || '';
 
-    // 1. WhatsApp Web Login Detection
-    if (platform === 'whatsapp') {
-      const isLinked = await page.evaluate(() => {
-        return !!document.querySelector('div#pane-side, div[aria-label="Chat list"], div[role="row"]');
+      // 1. WhatsApp Web Login Check
+      if (plat === 'whatsapp') {
+        const isLinked = !!document.querySelector('div#pane-side, div[aria-label="Chat list"], div[role="row"]');
+        return { isLoggedIn: isLinked, hasQr: !!document.querySelector('canvas[aria-label*="Scan" i], div[data-ref]') };
+      }
+
+      // 2. Telegram Web Login Check
+      if (plat === 'telegram') {
+        const isLinked = !!document.querySelector('div.chatlist-chat, div.chat-list, div.sidebar-header');
+        return { isLoggedIn: isLinked, hasQr: !!document.querySelector('canvas, div.qr-container') };
+      }
+
+      // 3. Instagram Login Check
+      if (plat === 'instagram') {
+        const hasLoggedInNav = !!document.querySelector(
+          'svg[aria-label="Home"], svg[aria-label="Direct"], svg[aria-label="Messenger"], ' +
+          'a[href*="/direct/inbox/"], svg[aria-label="Explore"], svg[aria-label="New post"], ' +
+          'a[href*="/accounts/edit/"], svg[aria-label="Search"]'
+        );
+        const errorAlert = document.querySelector('p#slfErrorAlert, div[role="alert"]')?.innerText || '';
+        const onLoginPage = !!document.querySelector("input[name='password'], input[name='username']");
+        return { isLoggedIn: hasLoggedInNav, errorAlert, onLoginPage };
+      }
+
+      // 4. Facebook Login Check
+      if (plat === 'facebook') {
+        const hasLoggedInNav = !!document.querySelector(
+          'div[role="navigation"] a[aria-label="Home"], a[aria-label="Facebook"], ' +
+          'div[aria-label="Account controls and settings"], a[aria-label="Messenger"]'
+        );
+        const onLoginPage = !!document.querySelector("input[name='pass'], input#email");
+        return { isLoggedIn: hasLoggedInNav, onLoginPage };
+      }
+
+      // 5. Twitter / X Login Check
+      if (plat === 'twitter' || plat === 'x') {
+        const hasLoggedInNav = !!document.querySelector(
+          'a[data-testid="AppTabBar_Home_Link"], a[aria-label="Direct Messages"], ' +
+          'div[data-testid="SideNav_AccountSwitcher_Button"], a[data-testid="AppTabBar_Profile_Link"]'
+        );
+        const onLoginPage = !!document.querySelector("input[autocomplete='username'], input[name='password']");
+        return { isLoggedIn: hasLoggedInNav, onLoginPage };
+      }
+
+      // 6. Google Login Check
+      if (plat === 'google' || plat === 'gmail') {
+        const hasLoggedInNav = !!document.querySelector(
+          'a[aria-label*="Google Account" i], div[role="main"], a[href*="SignOutOptions"]'
+        );
+        const onLoginPage = !!document.querySelector("input[type='password'], input[type='email']");
+        return { isLoggedIn: hasLoggedInNav, onLoginPage };
+      }
+
+      return { isLoggedIn: false };
+    }, platform.toLowerCase());
+
+    // Successfully logged in!
+    if (sessionState.isLoggedIn) {
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: `[AUTH] Authenticated session confirmed on ${platform.toUpperCase()}! Proceeding to evidence capture.`,
+        type: 'success'
       });
-      if (isLinked) {
-        sender.send('capture:log', {
-          caseId,
-          platform,
-          text: '[AUTH] WhatsApp Web device linked successfully!',
-          type: 'success'
-        });
-        return true;
-      }
-      if (!challengeNotified) {
-        challengeNotified = true;
-        sender.send('capture:log', {
-          caseId,
-          platform,
-          text: '[SECURITY] 📱 WhatsApp QR Code detected! Please scan the QR code on target device to link session.',
-          type: 'warn'
-        });
-      }
-      await new Promise(r => setTimeout(r, 2000));
-      continue;
+      return true;
     }
 
-    // 2. Telegram Web Login Detection
-    if (platform === 'telegram') {
-      const isLinked = await page.evaluate(() => {
-        return !!document.querySelector('div.chatlist-chat, div.chat-list, div.sidebar-header');
+    // Check for login credential errors (e.g. wrong password)
+    if (sessionState.errorAlert && sessionState.errorAlert !== lastErrorNotified) {
+      lastErrorNotified = sessionState.errorAlert;
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: `[AUTH ERROR] Login notice from ${platform.toUpperCase()}: "${sessionState.errorAlert}". Please enter correct credentials in the Chromium window.`,
+        type: 'error'
       });
-      if (isLinked) {
-        sender.send('capture:log', {
-          caseId,
-          platform,
-          text: '[AUTH] Telegram Web authenticated successfully!',
-          type: 'success'
-        });
-        return true;
-      }
-      if (!challengeNotified) {
-        challengeNotified = true;
-        sender.send('capture:log', {
-          caseId,
-          platform,
-          text: '[SECURITY] 📱 Telegram QR / SMS verification detected! Please complete verification in browser window.',
-          type: 'warn'
-        });
-      }
-      await new Promise(r => setTimeout(r, 2000));
-      continue;
     }
 
-    // 3. Instagram Login Detection
-    if (platform === 'instagram') {
-      if (!url.includes('/accounts/login') && !url.includes('/challenge') && !url.includes('/checkpoint')) {
-        sender.send('capture:log', {
-          caseId,
-          platform,
-          text: '[AUTH] Instagram login verified successfully!',
-          type: 'success'
-        });
-        return true;
-      }
-    }
-
-    // 4. Facebook Login Detection
-    if (platform === 'facebook') {
-      if (!url.includes('/login') && !url.includes('/checkpoint') && !url.includes('/two_step_verification')) {
-        sender.send('capture:log', {
-          caseId,
-          platform,
-          text: '[AUTH] Facebook login verified successfully!',
-          type: 'success'
-        });
-        return true;
-      }
-    }
-
-    // 5. Twitter / X Login Detection
-    if (platform === 'twitter' || platform === 'x') {
-      if (!url.includes('/login') && !url.includes('/flow/login') && !url.includes('/i/flow/')) {
-        sender.send('capture:log', {
-          caseId,
-          platform,
-          text: '[AUTH] Twitter/X login verified successfully!',
-          type: 'success'
-        });
-        return true;
-      }
-    }
-
-    // 6. Google Login Detection
-    if (platform === 'google' || platform === 'gmail') {
-      if (!url.includes('/signin') && !url.includes('/challenge') && !url.includes('/ServiceLogin')) {
-        sender.send('capture:log', {
-          caseId,
-          platform,
-          text: '[AUTH] Google account authentication verified!',
-          type: 'success'
-        });
-        return true;
-      }
-    }
-
-    // Generic CAPTCHA / 2FA Challenge Detection
+    // Generic CAPTCHA / 2FA / QR Challenge Detection
     const hasChallenge = await page.evaluate(() => {
       const text = document.body?.innerText || '';
       return (
@@ -1152,7 +1127,9 @@ async function waitForPlatformLoginOrCaptcha(page, platform, sender, caseId) {
         text.includes('robot') ||
         text.includes('Authenticate') ||
         text.includes('Passkey') ||
-        !!document.querySelector('iframe[src*="recaptcha"], iframe[src*="arkose"], iframe[src*="captcha"], #captcha')
+        text.includes('Suspicious login') ||
+        text.includes('Check your phone') ||
+        !!document.querySelector('iframe[src*="recaptcha"], iframe[src*="arkose"], iframe[src*="captcha"], #captcha, div.checkpoint')
       );
     });
 
@@ -1161,7 +1138,7 @@ async function waitForPlatformLoginOrCaptcha(page, platform, sender, caseId) {
       sender.send('capture:log', {
         caseId,
         platform,
-        text: `[SECURITY] ⚠️ Verification Challenge (CAPTCHA / 2FA / Checkpoint) detected on ${platform.toUpperCase()}! Please complete verification in the opened Chromium browser window. The capture suite will automatically resume once passed.`,
+        text: `[SECURITY] ⚠️ Verification Challenge (CAPTCHA / 2FA / Checkpoint) detected on ${platform.toUpperCase()}! Please complete verification in the opened Chromium browser window. The suite is monitoring and will resume immediately upon login.`,
         type: 'warn'
       });
     }
@@ -1511,16 +1488,18 @@ async function autoFillPlatformLogin(platform, creds, sender, caseId) {
             await new Promise(r => setTimeout(r, 200));
             await pEl.fill('');
             await pEl.pressSequentially(creds.password, { delay: 40 });
-            sender.send('capture:log', { caseId, platform, text: `[AUTH] Entered password into secure field.`, type: 'info' });
+            await new Promise(r => setTimeout(r, 400));
+            await pEl.press('Enter');
+            sender.send('capture:log', { caseId, platform, text: `[AUTH] Entered password and submitted form. Awaiting session response...`, type: 'info' });
             break;
           }
         } catch (_) {}
       }
     }
 
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 800));
 
-    // 5. Submit Login Form
+    // 5. Submit Login Form (Fallback Click)
     const submitSelectors = [
       "button[type='submit']",
       "button[name='login']",
@@ -1534,9 +1513,9 @@ async function autoFillPlatformLogin(platform, creds, sender, caseId) {
     for (const sSel of submitSelectors) {
       try {
         const sEl = page.locator(sSel).first();
-        if (await sEl.isVisible({ timeout: 2000 })) {
+        if (await sEl.isVisible({ timeout: 1500 })) {
           await sEl.click();
-          sender.send('capture:log', { caseId, platform, text: `[AUTH] Clicked Log In button. Awaiting authentication / OTP...`, type: 'success' });
+          sender.send('capture:log', { caseId, platform, text: `[AUTH] Triggered login button submit.`, type: 'success' });
           break;
         }
       } catch (_) {}
