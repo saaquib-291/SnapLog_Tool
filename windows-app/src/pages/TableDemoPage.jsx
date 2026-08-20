@@ -11,7 +11,7 @@ export default function TableDemoPage() {
         <div className="page-header">
           <div className="page-title-group">
             <h1>Master Evidence Ledger</h1>
-            <p>Chronological point-of-capture SHA-256 artifacts, platform sweeps, and court-ready metadata.</p>
+            <p>Chronological evidence records and verified capture artifacts.</p>
           </div>
         </div>
 

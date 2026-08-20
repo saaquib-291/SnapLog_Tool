@@ -264,9 +264,6 @@ const CaseDetailPage = () => {
                 <Badge variant={caseData.platforms?.length > 0 ? 'secondary' : 'outline'}>
                   {caseData.platforms?.length > 0 ? 'Active Evidence File' : 'New Investigation'}
                 </Badge>
-                <Badge variant="secondary" style={{ gap: '0.25rem', fontSize: '0.75rem' }}>
-                  <Lock size={11} /> Air-Gapped
-                </Badge>
               </div>
 
               <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0f172a' }}>{caseData.title}</h1>
@@ -320,24 +317,17 @@ const CaseDetailPage = () => {
             <div>
               <span style={{ fontWeight: 600, color: '#0f172a' }}>Captured Artifacts:</span> {evidenceList.length} Screenshots
             </div>
-            <div>
-              <span style={{ fontWeight: 600, color: '#0f172a' }}>Legal Standard:</span> Section 65B BSA / IEA Certified
-            </div>
           </div>
         </div>
 
-        {/* Target Credentials Bar - In Memory Only */}
+        {/* Target Credentials Bar */}
         <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem 1.5rem', marginBottom: '1.5rem', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <KeyRound size={16} style={{ color: '#2563eb' }} />
               <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, color: '#0f172a' }}>
-                Volatile Session Credentials & Chat Target (For Auto-Fill)
+                Session Credentials & Chat Target (For Auto-Fill)
               </h3>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '0.2rem 0.6rem', borderRadius: '20px', fontWeight: 600 }}>
-              <Shield size={12} />
-              <span>🔒 In-Memory Only • Never Saved to Disk or Database</span>
             </div>
           </div>
 
@@ -491,7 +481,6 @@ const CaseDetailPage = () => {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
             <div>
               <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#0f172a' }}>Captured Evidence Ledger</h3>
-              <p style={{ fontSize: '0.8125rem', color: '#64748b' }}>Point-of-capture cryptographic SHA-256 hashes & section metadata</p>
             </div>
             <Badge variant="secondary" style={{ gap: '0.25rem' }}>
               <Hash size={12} /> {evidenceList.length} Hash Verified
