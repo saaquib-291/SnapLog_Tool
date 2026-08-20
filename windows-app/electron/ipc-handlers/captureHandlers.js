@@ -555,21 +555,31 @@ async function handleInstagramFlow(captureSession, sender) {
 
   if (captureSession.stopRequested || page.isClosed()) return;
 
+  if (captureSession.stopRequested || page.isClosed()) return;
+
   // ==========================================
   // POST-CHAT: TARGET ACCOUNT PROFILE & FOLLOWERS/FOLLOWING
   // ==========================================
   let targetContact = (captureSession.targetChatUser || '').trim();
 
-  // If not provided by user, dynamically extract the contact handle from active chat header
+  // If not provided in input, extract the username from the active chat header
   if (!targetContact) {
     try {
       targetContact = await page.evaluate(() => {
-        const topLinks = Array.from(document.querySelectorAll('div[role="main"] header a, div[role="main"] a[role="link"]'));
-        for (const link of topLinks) {
-          const href = link.getAttribute('href') || '';
-          const match = href.match(/^\/([A-Za-z0-9_.]+)\/?$/);
-          if (match && !['direct', 'explore', 'reels', 'stories', 'accounts'].includes(match[1].toLowerCase())) {
-            return match[1];
+        // Look for username link in main header
+        const links = Array.from(document.querySelectorAll('div[role="main"] header a, main header a, header a'));
+        for (const l of links) {
+          const href = (l.getAttribute('href') || '').replace(/^\/|\/$/g, '');
+          if (href && !href.includes('/') && !['direct', 'explore', 'reels', 'stories', 'accounts', 'inbox'].includes(href.toLowerCase())) {
+            return href;
+          }
+        }
+        // Fallback: examine header text
+        const titleEl = document.querySelector('div[role="main"] header span, main header span, div[role="main"] header h2');
+        if (titleEl) {
+          const text = (titleEl.innerText || '').trim().replace(/^@/, '');
+          if (text && !text.includes('\n') && text.length < 35 && !['Active', 'Seen'].includes(text)) {
+            return text.split(' ')[0];
           }
         }
         return null;
@@ -577,6 +587,8 @@ async function handleInstagramFlow(captureSession, sender) {
     } catch (_) {}
   }
 
+  // Attempt navigation to target person's profile
+  let onProfilePage = false;
   if (targetContact) {
     sender.send('capture:log', {
       caseId,
@@ -585,30 +597,72 @@ async function handleInstagramFlow(captureSession, sender) {
       type: 'info'
     });
 
-    await page.goto(`https://www.instagram.com/${targetContact}/`, { waitUntil: 'domcontentloaded' });
-    await new Promise(r => setTimeout(r, 4000));
-    await dismissInstagramPopups(page, sender, caseId);
+    try {
+      await page.goto(`https://www.instagram.com/${targetContact}/`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await new Promise(r => setTimeout(r, 4000));
+      await dismissInstagramPopups(page, sender, caseId);
+      onProfilePage = true;
+    } catch (navErr) {
+      console.warn('Direct profile goto error:', navErr.message);
+    }
+  }
 
-    // Profile Overview Screenshot
-    await takeAndSaveScreenshot(captureSession, 'target_profile_overview', 1, sender);
-    if (captureSession.stopRequested || page.isClosed()) return;
+  // If goto was skipped or failed, attempt clicking the profile link directly in the chat header
+  if (!onProfilePage) {
+    try {
+      const headerProfileLink = page.locator('div[role="main"] header a, main header a, div[role="main"] header div[role="button"]').first();
+      if (await headerProfileLink.isVisible({ timeout: 2500 })) {
+        await headerProfileLink.click();
+        await new Promise(r => setTimeout(r, 4000));
+        await dismissInstagramPopups(page, sender, caseId);
+        onProfilePage = true;
+      }
+    } catch (_) {}
+  }
 
-    // 1. Followers List Modal & Auto-Scroll
+  // 1. Take Profile Overview Screenshot
+  try {
+    if (!captureSession.stopRequested && !page.isClosed()) {
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: `[PROFILE] Capturing @${targetContact || 'target'} profile overview...`,
+        type: 'info'
+      });
+      await takeAndSaveScreenshot(captureSession, 'target_profile_overview', 1, sender);
+    }
+  } catch (_) {}
+
+  if (captureSession.stopRequested || page.isClosed()) return;
+
+  // 2. Followers List Modal & Auto-Scroll
+  try {
     sender.send('capture:log', {
       caseId,
       platform,
-      text: `[FOLLOWERS] Opening @${targetContact}'s Followers list modal...`,
+      text: `[FOLLOWERS] Opening @${targetContact || 'target'}'s Followers list modal...`,
       type: 'info'
     });
 
     let followersOpened = false;
-    try {
-      const followersLink = page.locator('a[href*="/followers/"], a[href$="/followers/"], header li:has-text("followers") a, a:has-text("followers")').first();
-      if (await followersLink.isVisible({ timeout: 3500 })) {
-        await followersLink.click();
-        followersOpened = true;
-      }
-    } catch (_) {}
+    const followersSelectors = [
+      'a[href*="/followers/"]',
+      'a[href$="/followers/"]',
+      'header section li:nth-child(2) a',
+      'header li:has-text("followers") a',
+      'a:has-text("followers")'
+    ];
+
+    for (const fSel of followersSelectors) {
+      try {
+        const link = page.locator(fSel).first();
+        if (await link.isVisible({ timeout: 2000 })) {
+          await link.click();
+          followersOpened = true;
+          break;
+        }
+      } catch (_) {}
+    }
 
     if (followersOpened) {
       await new Promise(r => setTimeout(r, 3000));
@@ -656,25 +710,40 @@ async function handleInstagramFlow(captureSession, sender) {
         await new Promise(r => setTimeout(r, 1500));
       } catch (_) {}
     }
+  } catch (fErr) {
+    console.warn('Followers capture notice:', fErr.message);
+  }
 
-    // 2. Following List Modal & Auto-Scroll
-    if (captureSession.stopRequested || page.isClosed()) return;
+  if (captureSession.stopRequested || page.isClosed()) return;
 
+  // 3. Following List Modal & Auto-Scroll
+  try {
     sender.send('capture:log', {
       caseId,
       platform,
-      text: `[FOLLOWING] Opening @${targetContact}'s Following list modal...`,
+      text: `[FOLLOWING] Opening @${targetContact || 'target'}'s Following list modal...`,
       type: 'info'
     });
 
     let followingOpened = false;
-    try {
-      const followingLink = page.locator('a[href*="/following/"], a[href$="/following/"], header li:has-text("following") a, a:has-text("following")').first();
-      if (await followingLink.isVisible({ timeout: 3500 })) {
-        await followingLink.click();
-        followingOpened = true;
-      }
-    } catch (_) {}
+    const followingSelectors = [
+      'a[href*="/following/"]',
+      'a[href$="/following/"]',
+      'header section li:nth-child(3) a',
+      'header li:has-text("following") a',
+      'a:has-text("following")'
+    ];
+
+    for (const foSel of followingSelectors) {
+      try {
+        const link = page.locator(foSel).first();
+        if (await link.isVisible({ timeout: 2000 })) {
+          await link.click();
+          followingOpened = true;
+          break;
+        }
+      } catch (_) {}
+    }
 
     if (followingOpened) {
       await new Promise(r => setTimeout(r, 3000));
@@ -722,6 +791,8 @@ async function handleInstagramFlow(captureSession, sender) {
         await new Promise(r => setTimeout(r, 1500));
       } catch (_) {}
     }
+  } catch (foErr) {
+    console.warn('Following capture notice:', foErr.message);
   }
 }
 
