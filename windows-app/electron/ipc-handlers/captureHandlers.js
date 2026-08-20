@@ -353,31 +353,42 @@ async function handleInstagramFlow(captureSession, sender) {
   await new Promise(r => setTimeout(r, 4000));
   await dismissInstagramPopups(page, sender, caseId);
 
+  // 1. Dismiss any open note or modal prompt if visible
+  try {
+    const closeBtn = page.locator('div[role="dialog"] button, svg[aria-label="Close"], button:has-text("Close")').first();
+    if (await closeBtn.isVisible({ timeout: 1000 })) {
+      await closeBtn.click();
+      await new Promise(r => setTimeout(r, 600));
+    }
+  } catch (_) {}
+
   sender.send('capture:log', {
     caseId,
     platform,
-    text: '[CHATS] Locating first conversation thread in the inbox...',
+    text: '[CHATS] Locating 1st conversation thread under Messages list (filtering out Notes)...',
     type: 'info'
   });
 
-  const chatSelectors = [
-    'div[role="list"] > div[role="button"]',
-    'div[role="list"] a',
-    'div.x1n2onr6 a[href*="/direct/t/"]',
-    'div[aria-label="Chats"] div[role="button"]',
-    'div[role="grid"] div[role="row"]',
-    'div[role="button"]:has(img[alt*="profile" i])'
+  // 2. Strictly target direct chat thread links (a[href*="/direct/t/"]), NOT top Note avatar buttons
+  const chatThreadSelectors = [
+    'a[href*="/direct/t/"]',
+    'div[role="list"] a[href*="/direct/t/"]',
+    'div[role="grid"] a[href*="/direct/t/"]',
+    'div[aria-label="Chats"] a[href*="/direct/t/"]',
+    'div[aria-label="Direct thread list"] a[href*="/direct/t/"]'
   ];
 
-  for (const cSel of chatSelectors) {
+  let threadOpened = false;
+  for (const cSel of chatThreadSelectors) {
     try {
       const firstChat = page.locator(cSel).first();
-      if (await firstChat.isVisible({ timeout: 2500 })) {
+      if (await firstChat.isVisible({ timeout: 3000 })) {
         await firstChat.click();
+        threadOpened = true;
         sender.send('capture:log', {
           caseId,
           platform,
-          text: '[CHATS] Opened 1st conversation thread. Loading chat message history...',
+          text: '[CHATS] Opened 1st chat conversation thread. Loading message history...',
           type: 'success'
         });
         break;
@@ -385,7 +396,30 @@ async function handleInstagramFlow(captureSession, sender) {
     } catch (_) {}
   }
 
-  await new Promise(r => setTimeout(r, 3000));
+  // Fallback: Locate via DOM evaluation under "Messages" heading
+  if (!threadOpened) {
+    try {
+      const opened = await page.evaluate(() => {
+        const directLink = document.querySelector('a[href*="/direct/t/"]');
+        if (directLink) {
+          directLink.click();
+          return true;
+        }
+        return false;
+      });
+      if (opened) {
+        threadOpened = true;
+        sender.send('capture:log', {
+          caseId,
+          platform,
+          text: '[CHATS] Opened 1st chat conversation via direct thread link.',
+          type: 'success'
+        });
+      }
+    } catch (_) {}
+  }
+
+  await new Promise(r => setTimeout(r, 3500));
 
   sender.send('capture:log', {
     caseId,
