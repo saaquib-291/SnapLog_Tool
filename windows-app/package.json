@@ -1,7 +1,6 @@
 {
   "name": "windows-app",
   "version": "1.0.0",
-  "type": "module",
   "homepage": "./",
   "description": "Windows app for social media forensic tool",
   "main": "electron/main.js",
