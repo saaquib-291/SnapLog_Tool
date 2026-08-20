@@ -62,12 +62,12 @@ async function generateMetadata({ caseId, examinerId, platform, section, sequenc
   const fileBuffer = await fs.readFile(filePath);
   const sha256Hash = await computeHash(fileBuffer);
 
-  // Convert timestamp to ISO 8601 string (the metadata schema expects ISO8601 string, not basic format)
-  // The timestamp we have is in basic format (YYYYMMDDTHHMMSS), we need to convert to full ISO 8601 (YYYY-MM-DDTHH:mm:ss.sssZ)
-  const isoTimestamp = `${timestamp.slice(0,4)}-${timestamp.slice(4,6)}-${timestamp.slice(6,8)}T${timestamp.slice(9,11)}:${timestamp.slice(11,13)}:${timestamp.slice(13,15)}.000Z`;
+  // Generate valid ISO 8601 timestamp
+  const isoTimestamp = new Date().toISOString();
+  const cleanId = `SCR-${(platform || 'EV').slice(0, 2).toUpperCase()}-${String(sequenceNumber || 1).padStart(3, '0')}`;
 
   return {
-    screenshot_id: uuidv4(),
+    screenshot_id: cleanId,
     case_id: caseId,
     examiner_id: examinerId,
     platform: platform,

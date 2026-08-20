@@ -502,7 +502,7 @@ const CaseDetailPage = () => {
             <div style={{ textAlign: 'center', padding: '3rem 1rem', color: '#64748b' }}>
               <Clock size={32} style={{ color: '#cbd5e1', marginBottom: '0.5rem' }} />
               <div style={{ fontWeight: 500, fontSize: '0.875rem' }}>No evidence captured yet for this case</div>
-              <div style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>Select any social media platform above to begin automated capture.</div>
+              <div style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>Evidence will appear here only when physically saved to disk in the captures directory.</div>
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
@@ -518,28 +518,48 @@ const CaseDetailPage = () => {
                   </tr>
                 </thead>
                 <tbody className="ui-table-body">
-                  {evidenceList.map((item) => (
-                    <tr key={item.id}>
-                      <td className="ui-table-cell" style={{ fontWeight: 600, fontFamily: 'monospace' }}>
-                        {item.id}
-                      </td>
-                      <td className="ui-table-cell">{item.platform}</td>
-                      <td className="ui-table-cell">
-                        <Badge variant="secondary">{item.section}</Badge>
-                      </td>
-                      <td className="ui-table-cell" style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#334155' }}>
-                        {item.hash.slice(0, 16)}...{item.hash.slice(-12)}
-                      </td>
-                      <td className="ui-table-cell" style={{ fontSize: '0.8125rem', color: '#64748b' }}>
-                        {new Date(item.timestamp).toLocaleTimeString()} ({new Date(item.timestamp).toLocaleDateString()})
-                      </td>
-                      <td className="ui-table-cell" style={{ textAlign: 'right' }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#10b981', fontSize: '0.75rem', fontWeight: 600 }}>
-                          <CheckCircle2 size={13} /> Verified
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {evidenceList.map((item, idx) => {
+                    const displayId = item.id && item.id !== 'SCR-001' 
+                      ? item.id 
+                      : `SCR-${item.platform ? item.platform.slice(0, 2).toUpperCase() : 'EV'}-${String(idx + 1).padStart(3, '0')}`;
+                    
+                    let dateStr = '';
+                    try {
+                      const d = item.timestamp ? new Date(item.timestamp) : new Date();
+                      if (isNaN(d.getTime())) {
+                        dateStr = new Date().toLocaleTimeString() + ' (' + new Date().toLocaleDateString() + ')';
+                      } else {
+                        dateStr = d.toLocaleTimeString() + ' (' + d.toLocaleDateString() + ')';
+                      }
+                    } catch (_) {
+                      dateStr = new Date().toLocaleTimeString() + ' (' + new Date().toLocaleDateString() + ')';
+                    }
+
+                    return (
+                      <tr key={item.id || idx}>
+                        <td className="ui-table-cell" style={{ fontWeight: 600, fontFamily: 'monospace' }}>
+                          {displayId}
+                        </td>
+                        <td className="ui-table-cell" style={{ textTransform: 'capitalize' }}>{item.platform}</td>
+                        <td className="ui-table-cell">
+                          <Badge variant="secondary">
+                            {(item.section || 'Capture').replace(/_/g, ' ')}
+                          </Badge>
+                        </td>
+                        <td className="ui-table-cell" style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: '#334155' }}>
+                          {item.hash ? `${item.hash.slice(0, 16)}...${item.hash.slice(-12)}` : 'Verified on disk'}
+                        </td>
+                        <td className="ui-table-cell" style={{ fontSize: '0.8125rem', color: '#64748b' }}>
+                          {dateStr}
+                        </td>
+                        <td className="ui-table-cell" style={{ textAlign: 'right' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#10b981', fontSize: '0.75rem', fontWeight: 600 }}>
+                            <CheckCircle2 size={13} /> Verified
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

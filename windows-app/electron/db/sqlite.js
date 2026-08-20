@@ -193,7 +193,11 @@ function getCaseById(caseId) {
       artStmt.bind([caseId]);
       const artifacts = [];
       while (artStmt.step()) {
-        artifacts.push(artStmt.getAsObject());
+        const art = artStmt.getAsObject();
+        // ONLY include if the evidence file physically exists on disk in data/captures or target directory
+        if (art.filePath && fs.existsSync(art.filePath)) {
+          artifacts.push(art);
+        }
       }
       artStmt.free();
       result.artifacts = artifacts;
