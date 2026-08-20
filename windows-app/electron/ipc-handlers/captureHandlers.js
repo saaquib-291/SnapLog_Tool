@@ -1048,28 +1048,38 @@ async function waitForPlatformLoginOrCaptcha(page, platform, sender, caseId) {
         // 1. WhatsApp Web Login Check
         if (plat === 'whatsapp') {
           const isLinked = !!document.querySelector('div#pane-side, div[aria-label="Chat list"], div[role="row"]');
-          return { isLoggedIn: isLinked, hasQr: !!document.querySelector('canvas[aria-label*="Scan" i], div[data-ref]') };
+          const hasQr = !!document.querySelector('canvas, div[data-ref]');
+          return { isLoggedIn: isLinked, hasQr };
         }
 
         // 2. Telegram Web Login Check
         if (plat === 'telegram') {
           const isLinked = !!document.querySelector('div.chatlist-chat, div.chat-list, div.sidebar-header');
-          return { isLoggedIn: isLinked, hasQr: !!document.querySelector('canvas, div.qr-container') };
+          const hasQr = !!document.querySelector('canvas, div.qr-container');
+          return { isLoggedIn: isLinked, hasQr };
         }
 
         // 3. Instagram Login Check
         if (plat === 'instagram') {
-          const hasLoggedInNav = !!document.querySelector(
-            'svg[aria-label="Home"], svg[aria-label="Direct"], svg[aria-label="Messenger"], ' +
-            'a[href*="/direct/inbox/"], svg[aria-label="Explore"], svg[aria-label="New post"], ' +
-            'a[href*="/accounts/edit/"], svg[aria-label="Search"], img[alt*="profile picture" i]'
-          );
-          const hasSaveInfoPrompt = !!document.querySelector('button:has-text("Save info"), button:has-text("Save Info"), button:has-text("Not now"), button:has-text("Not Now")');
+          const svgs = Array.from(document.querySelectorAll('svg[aria-label]'));
+          const hasNav = svgs.some(s => {
+            const label = (s.getAttribute('aria-label') || '').toLowerCase();
+            return ['home', 'direct', 'messenger', 'explore', 'search', 'messages', 'new post', 'profile'].includes(label);
+          });
+          const hasLinks = !!document.querySelector('a[href*="/direct/inbox/"], a[href*="/direct/t/"], a[href*="/accounts/edit/"]');
+
+          const buttons = Array.from(document.querySelectorAll('button'));
+          const hasSaveInfo = buttons.some(b => {
+            const t = (b.innerText || '').toLowerCase();
+            return t.includes('save info') || t.includes('not now') || t.includes('save information');
+          });
+
           const onOneTap = url.includes('/accounts/onetap/') || url.includes('/accounts/manage_access');
           const onFeed = (pathname === '/' || pathname === '') && !document.querySelector("input[name='password']");
-          const hasMessages = !!document.querySelector('span:has-text("Messages"), a[href*="/direct/"]');
-          
-          const isActuallyLoggedIn = hasLoggedInNav || hasSaveInfoPrompt || onOneTap || onFeed || hasMessages;
+          const onProfile = pathname.length > 2 && !pathname.includes('/accounts/') && !document.querySelector("input[name='password']");
+          const onDirect = pathname.includes('/direct/');
+
+          const isActuallyLoggedIn = hasNav || hasLinks || hasSaveInfo || onOneTap || onFeed || onProfile || onDirect;
           const errorAlert = document.querySelector('p#slfErrorAlert, div[role="alert"]')?.innerText || '';
           const onLoginPage = !!document.querySelector("input[name='password'], input[name='username']");
           return { isLoggedIn: isActuallyLoggedIn, errorAlert, onLoginPage };
@@ -1077,29 +1087,21 @@ async function waitForPlatformLoginOrCaptcha(page, platform, sender, caseId) {
 
         // 4. Facebook Login Check
         if (plat === 'facebook') {
-          const hasLoggedInNav = !!document.querySelector(
-            'div[role="navigation"] a[aria-label="Home"], a[aria-label="Facebook"], ' +
-            'div[aria-label="Account controls and settings"], a[aria-label="Messenger"]'
-          );
+          const hasLoggedInNav = !!document.querySelector('div[role="navigation"] a[aria-label="Home"], a[aria-label="Facebook"], a[aria-label="Messenger"]');
           const onLoginPage = !!document.querySelector("input[name='pass'], input#email");
           return { isLoggedIn: hasLoggedInNav, onLoginPage };
         }
 
         // 5. Twitter / X Login Check
         if (plat === 'twitter' || plat === 'x') {
-          const hasLoggedInNav = !!document.querySelector(
-            'a[data-testid="AppTabBar_Home_Link"], a[aria-label="Direct Messages"], ' +
-            'div[data-testid="SideNav_AccountSwitcher_Button"], a[data-testid="AppTabBar_Profile_Link"]'
-          );
+          const hasLoggedInNav = !!document.querySelector('a[data-testid="AppTabBar_Home_Link"], a[aria-label="Direct Messages"], a[data-testid="AppTabBar_Profile_Link"]');
           const onLoginPage = !!document.querySelector("input[autocomplete='username'], input[name='password']");
           return { isLoggedIn: hasLoggedInNav, onLoginPage };
         }
 
         // 6. Google Login Check
         if (plat === 'google' || plat === 'gmail') {
-          const hasLoggedInNav = !!document.querySelector(
-            'a[aria-label*="Google Account" i], div[role="main"], a[href*="SignOutOptions"]'
-          );
+          const hasLoggedInNav = !!document.querySelector('div[role="main"], a[href*="SignOutOptions"]') || Array.from(document.querySelectorAll('a[aria-label]')).some(a => (a.getAttribute('aria-label') || '').toLowerCase().includes('google account'));
           const onLoginPage = !!document.querySelector("input[type='password'], input[type='email']");
           return { isLoggedIn: hasLoggedInNav, onLoginPage };
         }
