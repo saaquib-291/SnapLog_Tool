@@ -278,37 +278,76 @@ async function handleInstagramFlow(captureSession, sender) {
   await dismissInstagramPopups(page, sender, caseId);
 
   // Profile Navigation & Metrics
-  let username = captureSession.targetUsername;
-  if (!username) {
-    try {
-      const profileLink = page.locator('a[href^="/"][role="link"]:has(svg[aria-label*="Profile" i]), a[href^="/"]:has(img[alt*="profile" i])').first();
-      if (await profileLink.isVisible({ timeout: 2500 })) {
-        const href = await profileLink.getAttribute('href');
-        if (href) username = href.replace(/\//g, '');
-      }
-    } catch (_) {}
-  }
-
   sender.send('capture:log', {
     caseId,
     platform,
-    text: `[NAV] Navigating to target Instagram Profile${username ? ` (@${username})` : ''}...`,
+    text: '[NAV] Navigating to Logged-in User Profile...',
     type: 'info'
   });
 
-  if (username) {
-    await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: 'domcontentloaded' });
-  } else {
-    try {
-      const profileBtn = page.locator('svg[aria-label*="Profile" i]').first();
-      await profileBtn.click();
-    } catch (_) {
-      await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded' });
+  let navigatedToMyProfile = false;
+
+  // Strategy 1: Find and click the Profile link in the left sidebar
+  try {
+    const profileHref = await page.evaluate(() => {
+      const navLinks = Array.from(document.querySelectorAll('nav a, div[role="navigation"] a, div[role="banner"] a, a[role="link"]'));
+      for (const a of navLinks) {
+        const text = (a.innerText || '').trim().toLowerCase();
+        const ariaLabel = (a.getAttribute('aria-label') || '').toLowerCase();
+        const hasProfileImg = a.querySelector('img[alt*="profile" i], img[data-testid*="profile" i]');
+        if (text === 'profile' || ariaLabel === 'profile' || hasProfileImg) {
+          const href = a.getAttribute('href') || '';
+          const clean = href.replace(/^\/|\/$/g, '');
+          if (clean && !['direct', 'explore', 'reels', 'stories', 'accounts', 'inbox'].includes(clean.toLowerCase())) {
+            a.click();
+            return clean;
+          }
+        }
+      }
+
+      // Check any <a> with text "Profile"
+      const allLinks = Array.from(document.querySelectorAll('a'));
+      const profileLink = allLinks.find(a => (a.innerText || '').trim().toLowerCase() === 'profile');
+      if (profileLink) {
+        profileLink.click();
+        return 'profile_clicked';
+      }
+      return null;
+    });
+
+    if (profileHref) {
+      await new Promise(r => setTimeout(r, 4000));
+      await dismissInstagramPopups(page, sender, caseId);
+      if (page.url().includes('instagram.com/') && !page.url().includes('/direct/') && !page.url().endsWith('.com/')) {
+        navigatedToMyProfile = true;
+      }
+    }
+  } catch (_) {}
+
+  // Strategy 2: If targetUsername is provided and NOT an email, navigate directly
+  if (!navigatedToMyProfile) {
+    let cleanHandle = (captureSession.targetUsername || '').trim().replace(/^@/, '');
+    if (cleanHandle && !cleanHandle.includes('@') && !cleanHandle.includes(' ')) {
+      try {
+        await page.goto(`https://www.instagram.com/${cleanHandle}/`, { waitUntil: 'domcontentloaded' });
+        await new Promise(r => setTimeout(r, 4000));
+        await dismissInstagramPopups(page, sender, caseId);
+        navigatedToMyProfile = true;
+      } catch (_) {}
     }
   }
 
-  await new Promise(r => setTimeout(r, 3500));
-  await dismissInstagramPopups(page, sender, caseId);
+  // Strategy 3: Playwright locator click fallback
+  if (!navigatedToMyProfile) {
+    try {
+      const profileBtn = page.locator('a:has-text("Profile"), a[href*="/"]:has(img), svg[aria-label*="Profile" i]').first();
+      if (await profileBtn.isVisible({ timeout: 2500 })) {
+        await profileBtn.click();
+        await new Promise(r => setTimeout(r, 4000));
+        await dismissInstagramPopups(page, sender, caseId);
+      }
+    } catch (_) {}
+  }
 
   // Extract Profile Metrics
   sender.send('capture:log', {
