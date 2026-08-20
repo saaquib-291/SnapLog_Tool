@@ -14,8 +14,8 @@ import {
 } from 'lucide-react';
 import authService from '../services/authService';
 import Navbar from '../components/Navbar';
-import { Button } from '../components/ui/table-20-utils/button';
-import { Badge } from '../components/ui/table-20-utils/badge';
+import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
 
 const ProfilePage = () => {
   const [user, setUser] = useState(null);

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import { Badge } from "./ui/table-20-utils/badge";
-import { Button } from "./ui/table-20-utils/button";
-import { Checkbox } from "./ui/table-20-utils/checkbox";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { Checkbox } from "./ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -11,8 +11,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "./ui/table-20-utils/dropdown-menu";
-import { Input } from "./ui/table-20-utils/input";
+} from "./ui/dropdown-menu";
+import { Input } from "./ui/input";
 import {
   Table,
   TableBody,
@@ -20,7 +20,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "./ui/table-20-utils/table";
+} from "./ui/table";
 import {
   flexRender,
   getCoreRowModel,
@@ -44,7 +44,7 @@ import {
   Eye,
   Hash
 } from "lucide-react";
-import "./ui/table-20-utils/table-styles.css";
+import "./ui/table-styles.css";
 
 const forensicEvidenceData = [
   {

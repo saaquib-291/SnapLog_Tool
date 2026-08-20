@@ -17,7 +17,7 @@ import {
   KeyRound,
   CheckCircle2
 } from 'lucide-react';
-import { Button } from './ui/table-20-utils/button';
+import { Button } from './ui/button';
 
 const PLATFORMS = [
   { id: 'instagram', name: 'Instagram', color: '#E4405F', icon: Camera, bg: '#fff1f2', border: '#fecdd3' },

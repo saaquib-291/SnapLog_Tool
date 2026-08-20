@@ -23,8 +23,8 @@ import caseService from '../services/caseService';
 import captureService from '../services/captureService';
 import Navbar from '../components/Navbar';
 import PlatformButton from '../components/PlatformButton';
-import { Button } from '../components/ui/table-20-utils/button';
-import { Badge } from '../components/ui/table-20-utils/badge';
+import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
 
 const CaseDetailPage = () => {
   const { id } = useParams();

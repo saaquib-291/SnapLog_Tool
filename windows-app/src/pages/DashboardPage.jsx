@@ -18,7 +18,7 @@ import CaseCard from '../components/CaseCard';
 import AddCaseModal from '../components/AddCaseModal';
 import Table20 from '../components/Table20';
 import PlatformButton from '../components/PlatformButton';
-import { Button } from '../components/ui/table-20-utils/button';
+import { Button } from '../components/ui/button';
 
 const DashboardPage = () => {
   const [cases, setCases] = useState([]);

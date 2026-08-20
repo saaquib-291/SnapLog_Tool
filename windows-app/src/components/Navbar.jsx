@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { ShieldCheck, FolderGit2, Table2, User, Plus } from 'lucide-react';
-import { Button } from './ui/table-20-utils/button';
+import { Button } from './ui/button';
 
 const Navbar = ({ title, showAddButton = false, onAddClick, showBackButton = false, onBackClick }) => {
   const location = useLocation();
