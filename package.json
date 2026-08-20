@@ -6,6 +6,13 @@
     "start": "npm start --prefix windows-app",
     "dev": "npm run dev --prefix windows-app",
     "build": "npm run build --prefix windows-app",
-    "react-build": "npm run react-build --prefix windows-app"
+    "react-build": "npm run react-build --prefix windows-app",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "format:windows": "prettier --write \"windows-app/**/*.{js,jsx,json,css,md}\"",
+    "format:check:windows": "prettier --check \"windows-app/**/*.{js,jsx,json,css,md}\""
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6"
   }
 }
