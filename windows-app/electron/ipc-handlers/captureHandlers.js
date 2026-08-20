@@ -183,41 +183,30 @@ async function captureSections(captureSession, sender) {
   const captureKey = `${caseId}-${platform}`;
 
   try {
-    // If platform is Instagram, run the dedicated forensic pipeline
-    if (platform === 'instagram') {
-      await handleInstagramFlow(captureSession, sender);
-    } else {
-      const sections = platformConfig.sections || {};
-
-      // Process each section
-      for (const [sectionName, sectionConfig] of Object.entries(sections)) {
-        if (captureSession.stopRequested || !browserEngine.browser || !browserEngine.page || browserEngine.page.isClosed()) {
-          break;
-        }
-
-        captureSession.currentSection = sectionName;
-        captureSession.status = `capturing_${sectionName}`;
-
-        sender.send('capture:log', {
-          caseId,
-          platform,
-          text: `[NAV] Navigating to section: ${sectionName.toUpperCase()}`,
-          type: 'info'
-        });
-
-        // Navigate to section if nav_selector exists
-        if (sectionConfig.nav_selector) {
-          try {
-            await browserEngine.click(sectionConfig.nav_selector);
-            await new Promise(resolve => setTimeout(resolve, 3000));
-          } catch (navError) {
-            console.warn(`Could not navigate to ${sectionName} using nav_selector:`, navError.message);
-          }
-        }
-
-        // Capture this section
-        await captureSection(captureSession, sectionName, sectionConfig, sender);
-      }
+    switch (platform.toLowerCase()) {
+      case 'instagram':
+        await handleInstagramFlow(captureSession, sender);
+        break;
+      case 'facebook':
+        await handleFacebookFlow(captureSession, sender);
+        break;
+      case 'twitter':
+      case 'x':
+        await handleTwitterFlow(captureSession, sender);
+        break;
+      case 'whatsapp':
+        await handleWhatsAppFlow(captureSession, sender);
+        break;
+      case 'telegram':
+        await handleTelegramFlow(captureSession, sender);
+        break;
+      case 'google':
+      case 'gmail':
+        await handleGoogleFlow(captureSession, sender);
+        break;
+      default:
+        await handleGenericPlatformFlow(captureSession, sender);
+        break;
     }
 
     // Mark as completed
@@ -265,36 +254,26 @@ async function captureSections(captureSession, sender) {
 }
 
 /**
- * Dedicated Instagram Forensic Pipeline:
- * 1. Watches for & handles CAPTCHA / 2FA / Login resolution
- * 2. Navigates to Account Profile
- * 3. Extracts Followers, Following, and Posts/Activity Metrics
- * 4. Navigates to Direct Messages (Chats)
- * 5. Opens 1st Chat thread in inbox
- * 6. Continuous 3-second auto-scrolling screenshot capture
+ * 1. INSTAGRAM FORENSIC PIPELINE
  */
 async function handleInstagramFlow(captureSession, sender) {
   const { caseId, platform } = captureSession;
   const page = browserEngine.page;
   if (!page || page.isClosed()) return;
 
-  // Step 1: Wait for Login & Check for CAPTCHA / 2FA
   sender.send('capture:log', {
     caseId,
     platform,
-    text: '[AUTH] Checking session & monitoring for CAPTCHA / 2FA challenges...',
+    text: '[AUTH] Checking session & monitoring for CAPTCHA / 2FA challenges on Instagram...',
     type: 'info'
   });
 
-  const loggedIn = await waitForInstagramLoginOrCaptcha(page, sender, caseId);
-  if (!loggedIn) {
-    throw new Error('Authentication not completed or browser closed during verification.');
-  }
+  const loggedIn = await waitForPlatformLoginOrCaptcha(page, 'instagram', sender, caseId);
+  if (!loggedIn) throw new Error('Instagram authentication not completed.');
 
-  // Dismiss initial popup dialogs ("Save Info", "Turn on notifications")
   await dismissInstagramPopups(page, sender, caseId);
 
-  // Step 2: Go to Account Profile
+  // Profile Navigation & Metrics
   let username = captureSession.targetUsername;
   if (!username) {
     try {
@@ -327,7 +306,7 @@ async function handleInstagramFlow(captureSession, sender) {
   await new Promise(r => setTimeout(r, 3500));
   await dismissInstagramPopups(page, sender, caseId);
 
-  // Step 3: Extract Profile Metrics & Capture Profile Screenshot
+  // Extract Profile Metrics
   sender.send('capture:log', {
     caseId,
     platform,
@@ -357,12 +336,10 @@ async function handleInstagramFlow(captureSession, sender) {
     type: 'success'
   });
 
-  // Capture Profile Overview Screenshot
   await takeAndSaveScreenshot(captureSession, 'instagram_profile_overview', 1, sender);
-
   if (captureSession.stopRequested || page.isClosed()) return;
 
-  // Step 4: Navigate to Direct Messages / Chats
+  // Direct Messages & 1st Chat Auto-Scroll
   sender.send('capture:log', {
     caseId,
     platform,
@@ -374,7 +351,6 @@ async function handleInstagramFlow(captureSession, sender) {
   await new Promise(r => setTimeout(r, 4000));
   await dismissInstagramPopups(page, sender, caseId);
 
-  // Step 5: Locate and Click the 1st Chat in the inbox list
   sender.send('capture:log', {
     caseId,
     platform,
@@ -391,13 +367,11 @@ async function handleInstagramFlow(captureSession, sender) {
     'div[role="button"]:has(img[alt*="profile" i])'
   ];
 
-  let chatOpened = false;
   for (const cSel of chatSelectors) {
     try {
       const firstChat = page.locator(cSel).first();
       if (await firstChat.isVisible({ timeout: 2500 })) {
         await firstChat.click();
-        chatOpened = true;
         sender.send('capture:log', {
           caseId,
           platform,
@@ -409,18 +383,8 @@ async function handleInstagramFlow(captureSession, sender) {
     } catch (_) {}
   }
 
-  if (!chatOpened) {
-    sender.send('capture:log', {
-      caseId,
-      platform,
-      text: '[CHATS] Capturing active inbox viewport for chat messages...',
-      type: 'info'
-    });
-  }
-
   await new Promise(r => setTimeout(r, 3000));
 
-  // Step 6: Auto-scroll 1st Chat & Capture Screenshots every 3 seconds
   sender.send('capture:log', {
     caseId,
     platform,
@@ -429,36 +393,584 @@ async function handleInstagramFlow(captureSession, sender) {
   });
 
   let seq = 1;
-  const maxChatSnapshots = 12; // 12 captures * 3s interval = 36s of continuous evidence capture
-
+  const maxChatSnapshots = 12;
   for (let i = 0; i < maxChatSnapshots; i++) {
     if (captureSession.stopRequested || page.isClosed()) break;
-
-    // Take screenshot
     await takeAndSaveScreenshot(captureSession, 'instagram_chat_thread_1', seq++, sender);
-
-    // Wait 3 seconds
     await new Promise(r => setTimeout(r, 3000));
     if (captureSession.stopRequested || page.isClosed()) break;
 
-    // Auto-scroll chat history up/down
     try {
       await page.evaluate(() => {
         const scrollable = Array.from(document.querySelectorAll('div')).find(
           el => el.scrollHeight > el.clientHeight && el.clientHeight > 200 && window.getComputedStyle(el).overflowY !== 'hidden'
         );
-        if (scrollable) {
-          scrollable.scrollTop = Math.max(0, scrollable.scrollTop - 450);
-        } else {
-          window.scrollBy(0, -350);
-        }
+        if (scrollable) scrollable.scrollTop = Math.max(0, scrollable.scrollTop - 450);
+        else window.scrollBy(0, -350);
       });
     } catch (_) {}
   }
 }
 
 /**
- * Dismiss common Instagram popups ("Not Now", "Save Info")
+ * 2. FACEBOOK FORENSIC PIPELINE
+ */
+async function handleFacebookFlow(captureSession, sender) {
+  const { caseId, platform } = captureSession;
+  const page = browserEngine.page;
+  if (!page || page.isClosed()) return;
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[AUTH] Monitoring Facebook login, 2FA codes & security checkpoints...',
+    type: 'info'
+  });
+
+  const loggedIn = await waitForPlatformLoginOrCaptcha(page, 'facebook', sender, caseId);
+  if (!loggedIn) throw new Error('Facebook authentication not completed.');
+
+  await dismissFacebookPopups(page, sender, caseId);
+
+  // Profile Navigation & Metrics
+  let username = captureSession.targetUsername;
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: `[NAV] Navigating to Facebook Profile${username ? ` (@${username})` : ''}...`,
+    type: 'info'
+  });
+
+  if (username) {
+    await page.goto(`https://www.facebook.com/${username}`, { waitUntil: 'domcontentloaded' });
+  } else {
+    await page.goto('https://www.facebook.com/me', { waitUntil: 'domcontentloaded' });
+  }
+  await new Promise(r => setTimeout(r, 3500));
+  await dismissFacebookPopups(page, sender, caseId);
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[PROFILE] Extracting Facebook friends, followers & profile info...',
+    type: 'info'
+  });
+
+  let metrics = { friends: 'N/A', followers: 'N/A' };
+  try {
+    metrics = await page.evaluate(() => {
+      const text = document.body.innerText;
+      const friendsMatch = text.match(/([\d,\.KkMm]+)\s*(?:friends|mutual friends)/i);
+      const followersMatch = text.match(/([\d,\.KkMm]+)\s*(?:followers|follower)/i);
+      return {
+        friends: friendsMatch ? friendsMatch[1] : 'N/A',
+        followers: followersMatch ? followersMatch[1] : 'N/A'
+      };
+    });
+  } catch (_) {}
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: `[PROFILE METRICS] 📊 Friends: ${metrics.friends} | Followers: ${metrics.followers}`,
+    type: 'success'
+  });
+
+  await takeAndSaveScreenshot(captureSession, 'facebook_profile_overview', 1, sender);
+  if (captureSession.stopRequested || page.isClosed()) return;
+
+  // Messenger Chats & 1st Conversation
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[NAV] Navigating to Facebook Messenger Chats...',
+    type: 'info'
+  });
+
+  await page.goto('https://www.facebook.com/messages/t/', { waitUntil: 'domcontentloaded' });
+  await new Promise(r => setTimeout(r, 4000));
+  await dismissFacebookPopups(page, sender, caseId);
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[CHATS] Locating first conversation thread in Messenger...',
+    type: 'info'
+  });
+
+  const chatSelectors = [
+    'div[role="navigation"] div[role="row"]',
+    'div[role="navigation"] div[role="gridcell"]',
+    'div[role="navigation"] a[href*="/messages/t/"]',
+    'div[aria-label="Chats"] div[role="row"]'
+  ];
+
+  for (const cSel of chatSelectors) {
+    try {
+      const firstChat = page.locator(cSel).first();
+      if (await firstChat.isVisible({ timeout: 2500 })) {
+        await firstChat.click();
+        sender.send('capture:log', {
+          caseId,
+          platform,
+          text: '[CHATS] Opened 1st Messenger conversation.',
+          type: 'success'
+        });
+        break;
+      }
+    } catch (_) {}
+  }
+
+  await new Promise(r => setTimeout(r, 3000));
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[CAPTURE] Commencing 3-second continuous scroll & screenshot capture for Messenger Chat #1...',
+    type: 'info'
+  });
+
+  let seq = 1;
+  const maxChatSnapshots = 12;
+  for (let i = 0; i < maxChatSnapshots; i++) {
+    if (captureSession.stopRequested || page.isClosed()) break;
+    await takeAndSaveScreenshot(captureSession, 'facebook_chat_thread_1', seq++, sender);
+    await new Promise(r => setTimeout(r, 3000));
+    if (captureSession.stopRequested || page.isClosed()) break;
+
+    try {
+      await page.evaluate(() => {
+        const scrollable = Array.from(document.querySelectorAll('div[role="main"] div, div[aria-label="Messages"]')).find(
+          el => el.scrollHeight > el.clientHeight && el.clientHeight > 200
+        );
+        if (scrollable) scrollable.scrollTop = Math.max(0, scrollable.scrollTop - 400);
+        else window.scrollBy(0, -350);
+      });
+    } catch (_) {}
+  }
+}
+
+/**
+ * 3. TWITTER / X FORENSIC PIPELINE
+ */
+async function handleTwitterFlow(captureSession, sender) {
+  const { caseId, platform } = captureSession;
+  const page = browserEngine.page;
+  if (!page || page.isClosed()) return;
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[AUTH] Monitoring Twitter/X login, Arkose CAPTCHA & 2FA verification...',
+    type: 'info'
+  });
+
+  const loggedIn = await waitForPlatformLoginOrCaptcha(page, 'twitter', sender, caseId);
+  if (!loggedIn) throw new Error('Twitter/X authentication not completed.');
+
+  // Profile Navigation & Metrics
+  let username = captureSession.targetUsername;
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: `[NAV] Navigating to Twitter/X Profile${username ? ` (@${username})` : ''}...`,
+    type: 'info'
+  });
+
+  if (username) {
+    await page.goto(`https://x.com/${username}`, { waitUntil: 'domcontentloaded' });
+  } else {
+    try {
+      const profileBtn = page.locator('a[aria-label*="Profile" i], a[href*="/i/me"]').first();
+      await profileBtn.click();
+    } catch (_) {
+      await page.goto('https://x.com/home', { waitUntil: 'domcontentloaded' });
+    }
+  }
+  await new Promise(r => setTimeout(r, 3500));
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[PROFILE] Extracting followers, following & post stats on Twitter/X...',
+    type: 'info'
+  });
+
+  let metrics = { posts: 'N/A', followers: 'N/A', following: 'N/A' };
+  try {
+    metrics = await page.evaluate(() => {
+      const text = document.body.innerText;
+      const followersMatch = text.match(/([\d,\.KkMm]+)\s*(?:Followers|Follower)/i);
+      const followingMatch = text.match(/([\d,\.KkMm]+)\s*(?:Following)/i);
+      const postsMatch = text.match(/([\d,\.KkMm]+)\s*(?:posts|Tweets|post)/i);
+      return {
+        posts: postsMatch ? postsMatch[1] : 'N/A',
+        followers: followersMatch ? followersMatch[1] : 'N/A',
+        following: followingMatch ? followingMatch[1] : 'N/A'
+      };
+    });
+  } catch (_) {}
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: `[PROFILE METRICS] 📊 Posts: ${metrics.posts} | Followers: ${metrics.followers} | Following: ${metrics.following}`,
+    type: 'success'
+  });
+
+  await takeAndSaveScreenshot(captureSession, 'twitter_profile_overview', 1, sender);
+  if (captureSession.stopRequested || page.isClosed()) return;
+
+  // Direct Messages & 1st DM Auto-Scroll
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[NAV] Navigating to Twitter/X Direct Messages...',
+    type: 'info'
+  });
+
+  await page.goto('https://x.com/messages', { waitUntil: 'domcontentloaded' });
+  await new Promise(r => setTimeout(r, 4000));
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[CHATS] Locating first conversation thread in Messages...',
+    type: 'info'
+  });
+
+  const chatSelectors = [
+    'div[data-testid="conversation"]',
+    'div[aria-label="Timeline: Messages"] div[role="button"]',
+    'div[aria-label="Timeline: Direct Messages"] div[role="button"]'
+  ];
+
+  for (const cSel of chatSelectors) {
+    try {
+      const firstChat = page.locator(cSel).first();
+      if (await firstChat.isVisible({ timeout: 2500 })) {
+        await firstChat.click();
+        sender.send('capture:log', {
+          caseId,
+          platform,
+          text: '[CHATS] Opened 1st Twitter DM thread.',
+          type: 'success'
+        });
+        break;
+      }
+    } catch (_) {}
+  }
+
+  await new Promise(r => setTimeout(r, 3000));
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[CAPTURE] Commencing 3-second continuous scroll & screenshot capture for Twitter DM #1...',
+    type: 'info'
+  });
+
+  let seq = 1;
+  const maxChatSnapshots = 12;
+  for (let i = 0; i < maxChatSnapshots; i++) {
+    if (captureSession.stopRequested || page.isClosed()) break;
+    await takeAndSaveScreenshot(captureSession, 'twitter_chat_thread_1', seq++, sender);
+    await new Promise(r => setTimeout(r, 3000));
+    if (captureSession.stopRequested || page.isClosed()) break;
+
+    try {
+      await page.evaluate(() => {
+        const scrollable = Array.from(document.querySelectorAll('div[data-testid="messageEntry"], div[aria-label="Timeline: Messages"]')).find(
+          el => el.scrollHeight > el.clientHeight && el.clientHeight > 200
+        );
+        if (scrollable) scrollable.scrollTop = Math.max(0, scrollable.scrollTop - 400);
+        else window.scrollBy(0, -350);
+      });
+    } catch (_) {}
+  }
+}
+
+/**
+ * 4. WHATSAPP WEB FORENSIC PIPELINE
+ */
+async function handleWhatsAppFlow(captureSession, sender) {
+  const { caseId, platform } = captureSession;
+  const page = browserEngine.page;
+  if (!page || page.isClosed()) return;
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[AUTH] Monitoring WhatsApp Web QR Code Link & Session readiness...',
+    type: 'info'
+  });
+
+  const loggedIn = await waitForPlatformLoginOrCaptcha(page, 'whatsapp', sender, caseId);
+  if (!loggedIn) throw new Error('WhatsApp Web linking not completed.');
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[PROFILE] Analyzing active WhatsApp Web account details...',
+    type: 'info'
+  });
+
+  await new Promise(r => setTimeout(r, 3000));
+  await takeAndSaveScreenshot(captureSession, 'whatsapp_chats_overview', 1, sender);
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[CHATS] Locating 1st conversation thread in WhatsApp chat list...',
+    type: 'info'
+  });
+
+  const chatSelectors = [
+    'div#pane-side div[role="row"]',
+    'div#pane-side div._ak72',
+    'div#pane-side div[role="gridcell"]',
+    'div[aria-label="Chat list"] div[role="listitem"]'
+  ];
+
+  for (const cSel of chatSelectors) {
+    try {
+      const firstChat = page.locator(cSel).first();
+      if (await firstChat.isVisible({ timeout: 3000 })) {
+        await firstChat.click();
+        sender.send('capture:log', {
+          caseId,
+          platform,
+          text: '[CHATS] Opened 1st WhatsApp conversation thread.',
+          type: 'success'
+        });
+        break;
+      }
+    } catch (_) {}
+  }
+
+  await new Promise(r => setTimeout(r, 3000));
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[CAPTURE] Commencing 3-second continuous scroll & screenshot capture for WhatsApp Chat #1...',
+    type: 'info'
+  });
+
+  let seq = 1;
+  const maxChatSnapshots = 12;
+  for (let i = 0; i < maxChatSnapshots; i++) {
+    if (captureSession.stopRequested || page.isClosed()) break;
+    await takeAndSaveScreenshot(captureSession, 'whatsapp_chat_thread_1', seq++, sender);
+    await new Promise(r => setTimeout(r, 3000));
+    if (captureSession.stopRequested || page.isClosed()) break;
+
+    try {
+      await page.evaluate(() => {
+        const messagePanel = document.querySelector('div[role="application"] div[tabindex="-1"], div._ajyl, div.x3ps709');
+        if (messagePanel) messagePanel.scrollTop = Math.max(0, messagePanel.scrollTop - 500);
+        else window.scrollBy(0, -350);
+      });
+    } catch (_) {}
+  }
+}
+
+/**
+ * 5. TELEGRAM WEB FORENSIC PIPELINE
+ */
+async function handleTelegramFlow(captureSession, sender) {
+  const { caseId, platform } = captureSession;
+  const page = browserEngine.page;
+  if (!page || page.isClosed()) return;
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[AUTH] Monitoring Telegram Web QR / SMS Code verification...',
+    type: 'info'
+  });
+
+  const loggedIn = await waitForPlatformLoginOrCaptcha(page, 'telegram', sender, caseId);
+  if (!loggedIn) throw new Error('Telegram Web authentication not completed.');
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[PROFILE] Analyzing active Telegram account & dialogs...',
+    type: 'info'
+  });
+
+  await new Promise(r => setTimeout(r, 3000));
+  await takeAndSaveScreenshot(captureSession, 'telegram_chats_overview', 1, sender);
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[CHATS] Locating 1st conversation thread in Telegram chat list...',
+    type: 'info'
+  });
+
+  const chatSelectors = [
+    'div.chatlist-chat',
+    'div.chat-list > a',
+    'div.chat-list div.chat-item',
+    'li.chatlist-chat'
+  ];
+
+  for (const cSel of chatSelectors) {
+    try {
+      const firstChat = page.locator(cSel).first();
+      if (await firstChat.isVisible({ timeout: 3000 })) {
+        await firstChat.click();
+        sender.send('capture:log', {
+          caseId,
+          platform,
+          text: '[CHATS] Opened 1st Telegram conversation thread.',
+          type: 'success'
+        });
+        break;
+      }
+    } catch (_) {}
+  }
+
+  await new Promise(r => setTimeout(r, 3000));
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[CAPTURE] Commencing 3-second continuous scroll & screenshot capture for Telegram Chat #1...',
+    type: 'info'
+  });
+
+  let seq = 1;
+  const maxChatSnapshots = 12;
+  for (let i = 0; i < maxChatSnapshots; i++) {
+    if (captureSession.stopRequested || page.isClosed()) break;
+    await takeAndSaveScreenshot(captureSession, 'telegram_chat_thread_1', seq++, sender);
+    await new Promise(r => setTimeout(r, 3000));
+    if (captureSession.stopRequested || page.isClosed()) break;
+
+    try {
+      await page.evaluate(() => {
+        const bubbles = document.querySelector('div.bubbles-inner, div.messages-container');
+        if (bubbles) bubbles.scrollTop = Math.max(0, bubbles.scrollTop - 500);
+        else window.scrollBy(0, -350);
+      });
+    } catch (_) {}
+  }
+}
+
+/**
+ * 6. GOOGLE / GMAIL FORENSIC PIPELINE
+ */
+async function handleGoogleFlow(captureSession, sender) {
+  const { caseId, platform } = captureSession;
+  const page = browserEngine.page;
+  if (!page || page.isClosed()) return;
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[AUTH] Monitoring Google Account 2FA, Passkey & verification prompt...',
+    type: 'info'
+  });
+
+  const loggedIn = await waitForPlatformLoginOrCaptcha(page, 'google', sender, caseId);
+  if (!loggedIn) throw new Error('Google authentication not completed.');
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[NAV] Navigating to Google Account Profile & Security Overview...',
+    type: 'info'
+  });
+
+  await page.goto('https://myaccount.google.com/', { waitUntil: 'domcontentloaded' });
+  await new Promise(r => setTimeout(r, 3500));
+  await takeAndSaveScreenshot(captureSession, 'google_account_overview', 1, sender);
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[NAV] Navigating to Gmail Inbox...',
+    type: 'info'
+  });
+
+  await page.goto('https://mail.google.com/mail/u/0/#inbox', { waitUntil: 'domcontentloaded' });
+  await new Promise(r => setTimeout(r, 4000));
+
+  try {
+    const firstMail = page.locator('table[role="grid"] tr[role="row"]').first();
+    if (await firstMail.isVisible({ timeout: 3000 })) {
+      await firstMail.click();
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: '[CHATS] Opened 1st message thread in Gmail inbox.',
+        type: 'success'
+      });
+    }
+  } catch (_) {}
+
+  await new Promise(r => setTimeout(r, 3000));
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[CAPTURE] Commencing 3-second continuous screenshot capture for Gmail message thread...',
+    type: 'info'
+  });
+
+  let seq = 1;
+  const maxChatSnapshots = 12;
+  for (let i = 0; i < maxChatSnapshots; i++) {
+    if (captureSession.stopRequested || page.isClosed()) break;
+    await takeAndSaveScreenshot(captureSession, 'google_message_thread_1', seq++, sender);
+    await new Promise(r => setTimeout(r, 3000));
+    if (captureSession.stopRequested || page.isClosed()) break;
+    try {
+      await page.evaluate(() => window.scrollBy(0, 500));
+    } catch (_) {}
+  }
+}
+
+/**
+ * GENERIC FALLBACK FORENSIC PIPELINE
+ */
+async function handleGenericPlatformFlow(captureSession, sender) {
+  const { caseId, platform, platformConfig } = captureSession;
+  const sections = platformConfig.sections || {};
+
+  for (const [sectionName, sectionConfig] of Object.entries(sections)) {
+    if (captureSession.stopRequested || !browserEngine.browser || !browserEngine.page || browserEngine.page.isClosed()) {
+      break;
+    }
+
+    captureSession.currentSection = sectionName;
+    captureSession.status = `capturing_${sectionName}`;
+
+    sender.send('capture:log', {
+      caseId,
+      platform,
+      text: `[NAV] Navigating to section: ${sectionName.toUpperCase()}`,
+      type: 'info'
+    });
+
+    if (sectionConfig.nav_selector) {
+      try {
+        await browserEngine.click(sectionConfig.nav_selector);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      } catch (navError) {
+        console.warn(`Could not navigate to ${sectionName} using nav_selector:`, navError.message);
+      }
+    }
+
+    await captureSection(captureSession, sectionName, sectionConfig, sender);
+  }
+}
+
+/**
+ * Universal Dialog Dismissal for Instagram / Facebook
  */
 async function dismissInstagramPopups(page, sender, caseId) {
   if (!page || page.isClosed()) return;
@@ -485,14 +997,36 @@ async function dismissInstagramPopups(page, sender, caseId) {
   }
 }
 
+async function dismissFacebookPopups(page, sender, caseId) {
+  if (!page || page.isClosed()) return;
+  const popupSelectors = [
+    'button[data-cookiebanner="accept_button"]',
+    'button:has-text("Allow all cookies")',
+    'button:has-text("Accept All")',
+    'div[role="dialog"] button[aria-label="Close"]',
+    'div[role="dialog"] button:has-text("Not Now")'
+  ];
+
+  for (const pSel of popupSelectors) {
+    try {
+      const btn = page.locator(pSel).first();
+      if (await btn.isVisible({ timeout: 1200 })) {
+        await btn.click();
+        sender.send('capture:log', { caseId, platform: 'facebook', text: '[INFO] Dismissed dialog prompt.', type: 'info' });
+        await new Promise(r => setTimeout(r, 600));
+      }
+    } catch (_) {}
+  }
+}
+
 /**
- * Wait for Instagram login or notify user to solve CAPTCHA / 2FA
+ * Universal Multi-Platform Login, 2FA, QR & CAPTCHA Verification Monitor
  */
-async function waitForInstagramLoginOrCaptcha(page, sender, caseId) {
+async function waitForPlatformLoginOrCaptcha(page, platform, sender, caseId) {
   if (!page || page.isClosed()) return false;
 
-  let captchaNotified = false;
-  const maxWaitMs = 180000; // 3 minutes wait time for CAPTCHA/2FA
+  let challengeNotified = false;
+  const maxWaitMs = 240000; // 4 minutes wait time
   const startTime = Date.now();
 
   while (Date.now() - startTime < maxWaitMs) {
@@ -500,19 +1034,114 @@ async function waitForInstagramLoginOrCaptcha(page, sender, caseId) {
 
     const url = page.url();
 
-    // Check if successfully past login / challenge screens
-    if (!url.includes('/accounts/login') && !url.includes('/challenge') && !url.includes('/checkpoint')) {
-      sender.send('capture:log', {
-        caseId,
-        platform: 'instagram',
-        text: '[AUTH] Login verified successfully! Proceeding with forensic capture.',
-        type: 'success'
+    // 1. WhatsApp Web Login Detection
+    if (platform === 'whatsapp') {
+      const isLinked = await page.evaluate(() => {
+        return !!document.querySelector('div#pane-side, div[aria-label="Chat list"], div[role="row"]');
       });
-      return true;
+      if (isLinked) {
+        sender.send('capture:log', {
+          caseId,
+          platform,
+          text: '[AUTH] WhatsApp Web device linked successfully!',
+          type: 'success'
+        });
+        return true;
+      }
+      if (!challengeNotified) {
+        challengeNotified = true;
+        sender.send('capture:log', {
+          caseId,
+          platform,
+          text: '[SECURITY] 📱 WhatsApp QR Code detected! Please scan the QR code on target device to link session.',
+          type: 'warn'
+        });
+      }
+      await new Promise(r => setTimeout(r, 2000));
+      continue;
     }
 
-    // Detect CAPTCHA or Security Checkpoint
-    const hasCaptcha = await page.evaluate(() => {
+    // 2. Telegram Web Login Detection
+    if (platform === 'telegram') {
+      const isLinked = await page.evaluate(() => {
+        return !!document.querySelector('div.chatlist-chat, div.chat-list, div.sidebar-header');
+      });
+      if (isLinked) {
+        sender.send('capture:log', {
+          caseId,
+          platform,
+          text: '[AUTH] Telegram Web authenticated successfully!',
+          type: 'success'
+        });
+        return true;
+      }
+      if (!challengeNotified) {
+        challengeNotified = true;
+        sender.send('capture:log', {
+          caseId,
+          platform,
+          text: '[SECURITY] 📱 Telegram QR / SMS verification detected! Please complete verification in browser window.',
+          type: 'warn'
+        });
+      }
+      await new Promise(r => setTimeout(r, 2000));
+      continue;
+    }
+
+    // 3. Instagram Login Detection
+    if (platform === 'instagram') {
+      if (!url.includes('/accounts/login') && !url.includes('/challenge') && !url.includes('/checkpoint')) {
+        sender.send('capture:log', {
+          caseId,
+          platform,
+          text: '[AUTH] Instagram login verified successfully!',
+          type: 'success'
+        });
+        return true;
+      }
+    }
+
+    // 4. Facebook Login Detection
+    if (platform === 'facebook') {
+      if (!url.includes('/login') && !url.includes('/checkpoint') && !url.includes('/two_step_verification')) {
+        sender.send('capture:log', {
+          caseId,
+          platform,
+          text: '[AUTH] Facebook login verified successfully!',
+          type: 'success'
+        });
+        return true;
+      }
+    }
+
+    // 5. Twitter / X Login Detection
+    if (platform === 'twitter' || platform === 'x') {
+      if (!url.includes('/login') && !url.includes('/flow/login') && !url.includes('/i/flow/')) {
+        sender.send('capture:log', {
+          caseId,
+          platform,
+          text: '[AUTH] Twitter/X login verified successfully!',
+          type: 'success'
+        });
+        return true;
+      }
+    }
+
+    // 6. Google Login Detection
+    if (platform === 'google' || platform === 'gmail') {
+      if (!url.includes('/signin') && !url.includes('/challenge') && !url.includes('/ServiceLogin')) {
+        sender.send('capture:log', {
+          caseId,
+          platform,
+          text: '[AUTH] Google account authentication verified!',
+          type: 'success'
+        });
+        return true;
+      }
+    }
+
+    // Generic CAPTCHA / 2FA Challenge Detection
+    const hasChallenge = await page.evaluate(() => {
       const text = document.body?.innerText || '';
       return (
         text.includes('Confirm that it’s you') ||
@@ -521,16 +1150,18 @@ async function waitForInstagramLoginOrCaptcha(page, sender, caseId) {
         text.includes('Enter code') ||
         text.includes('two-factor') ||
         text.includes('robot') ||
+        text.includes('Authenticate') ||
+        text.includes('Passkey') ||
         !!document.querySelector('iframe[src*="recaptcha"], iframe[src*="arkose"], iframe[src*="captcha"], #captcha')
       );
     });
 
-    if (hasCaptcha && !captchaNotified) {
-      captchaNotified = true;
+    if (hasChallenge && !challengeNotified) {
+      challengeNotified = true;
       sender.send('capture:log', {
         caseId,
-        platform: 'instagram',
-        text: '[SECURITY] ⚠️ CAPTCHA / 2FA Challenge detected! Please complete the verification in the Chromium window. The capture suite will automatically resume once passed.',
+        platform,
+        text: `[SECURITY] ⚠️ Verification Challenge (CAPTCHA / 2FA / Checkpoint) detected on ${platform.toUpperCase()}! Please complete verification in the opened Chromium browser window. The capture suite will automatically resume once passed.`,
         type: 'warn'
       });
     }
