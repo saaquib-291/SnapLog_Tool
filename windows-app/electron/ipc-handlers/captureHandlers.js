@@ -676,45 +676,64 @@ async function handleInstagramFlow(captureSession, sender) {
 
   if (captureSession.stopRequested || page.isClosed()) return;
 
-  // 2. Followers List Modal & Auto-Scroll
-  try {
-    sender.send('capture:log', {
-      caseId,
-      platform,
-      text: `[FOLLOWERS] Opening @${targetContact || 'target'}'s Followers list modal...`,
-      type: 'info'
-    });
-
-    let followersOpened = false;
-    const followersSelectors = [
-      'a[href*="/followers/"]',
-      'a[href$="/followers/"]',
-      'header section li:nth-child(2) a',
-      'header li:has-text("followers") a',
-      'a:has-text("followers")'
-    ];
-
-    for (const fSel of followersSelectors) {
-      try {
-        const link = page.locator(fSel).first();
-        if (await link.isVisible({ timeout: 2000 })) {
-          await link.click();
-          followersOpened = true;
-          break;
-        }
-      } catch (_) {}
-    }
-
-    if (followersOpened) {
-      await new Promise(r => setTimeout(r, 3000));
+    // 2. Followers List Modal & Auto-Scroll
+    if (!captureSession.stopRequested && !page.isClosed()) {
       sender.send('capture:log', {
         caseId,
         platform,
-        text: `[FOLLOWERS] Commencing 3-second continuous scroll & screenshot capture for Followers list...`,
+        text: `[FOLLOWERS] Opening @${resolvedHandle || 'target'}'s Followers list...`,
         type: 'info'
       });
 
-      const maxFollowerSnapshots = 6;
+      // Try multiple click strategies for followers link
+      let followersClicked = await page.evaluate(() => {
+        const allLinks = Array.from(document.querySelectorAll('a'));
+        const link = allLinks.find(a => {
+          const href = (a.getAttribute('href') || '').toLowerCase();
+          return href.includes('/followers') || href.endsWith('/followers/');
+        });
+        if (link) {
+          link.scrollIntoView({ block: 'center' });
+          link.click();
+          return true;
+        }
+
+        const allItems = Array.from(document.querySelectorAll('header li, main header li, ul li, header a, main a'));
+        for (const item of allItems) {
+          if ((item.innerText || '').toLowerCase().includes('follower')) {
+            const clickTarget = item.querySelector('a, button, span') || item;
+            clickTarget.click();
+            return true;
+          }
+        }
+        return false;
+      });
+
+      if (!followersClicked) {
+        try {
+          const locator = page.locator('a[href*="followers" i], header li:has-text("follower" i)').first();
+          if (await locator.isVisible({ timeout: 2500 })) {
+            await locator.click({ force: true });
+            followersClicked = true;
+          }
+        } catch (_) {}
+      }
+
+      // Wait for dialog modal to appear
+      try {
+        await page.locator('div[role="dialog"]').first().waitFor({ state: 'visible', timeout: 4000 });
+      } catch (_) {}
+
+      await new Promise(r => setTimeout(r, 2500));
+
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: `[FOLLOWERS] Commencing 3-second scroll & screenshot capture for Followers...`,
+        type: 'info'
+      });
+
+      const maxFollowerSnapshots = 5;
       for (let f = 1; f <= maxFollowerSnapshots; f++) {
         if (captureSession.stopRequested || page.isClosed()) break;
         await takeAndSaveScreenshot(captureSession, 'target_followers_list', f, sender);
@@ -722,25 +741,30 @@ async function handleInstagramFlow(captureSession, sender) {
           sender.send('capture:log', {
             caseId,
             platform,
-            text: `[SCROLL] Scrolled Followers modal (Snapshot #${f} captured). Next snapshot in 3s...`,
+            text: `[SCROLL] Scrolled Followers list (Snapshot #${f} captured). Next snapshot in 3s...`,
             type: 'info'
           });
+
           await page.evaluate(() => {
             const dialog = document.querySelector('div[role="dialog"]');
             if (dialog) {
-              const scrollable = Array.from(dialog.querySelectorAll('div')).find(
-                el => el.scrollHeight > el.clientHeight && el.clientHeight > 150
+              const scrollables = Array.from(dialog.querySelectorAll('div')).filter(
+                el => el.scrollHeight > el.clientHeight && el.clientHeight > 80
               );
-              if (scrollable) scrollable.scrollTop += 550;
+              for (const s of scrollables) {
+                s.scrollTop += 500;
+              }
+            } else {
+              window.scrollBy(0, 500);
             }
           });
           await page.mouse.move(600, 450);
-          await page.mouse.wheel(0, 550);
+          await page.mouse.wheel(0, 500);
           await new Promise(r => setTimeout(r, 3000));
         }
       }
 
-      // Close followers modal
+      // Dismiss dialog
       try {
         const closeBtn = page.locator('div[role="dialog"] button, svg[aria-label="Close"]').first();
         if (await closeBtn.isVisible({ timeout: 1500 })) {
@@ -751,51 +775,64 @@ async function handleInstagramFlow(captureSession, sender) {
         await new Promise(r => setTimeout(r, 1500));
       } catch (_) {}
     }
-  } catch (fErr) {
-    console.warn('Followers capture notice:', fErr.message);
-  }
 
-  if (captureSession.stopRequested || page.isClosed()) return;
-
-  // 3. Following List Modal & Auto-Scroll
-  try {
-    sender.send('capture:log', {
-      caseId,
-      platform,
-      text: `[FOLLOWING] Opening @${targetContact || 'target'}'s Following list modal...`,
-      type: 'info'
-    });
-
-    let followingOpened = false;
-    const followingSelectors = [
-      'a[href*="/following/"]',
-      'a[href$="/following/"]',
-      'header section li:nth-child(3) a',
-      'header li:has-text("following") a',
-      'a:has-text("following")'
-    ];
-
-    for (const foSel of followingSelectors) {
-      try {
-        const link = page.locator(foSel).first();
-        if (await link.isVisible({ timeout: 2000 })) {
-          await link.click();
-          followingOpened = true;
-          break;
-        }
-      } catch (_) {}
-    }
-
-    if (followingOpened) {
-      await new Promise(r => setTimeout(r, 3000));
+    // 3. Following List Modal & Auto-Scroll
+    if (!captureSession.stopRequested && !page.isClosed()) {
       sender.send('capture:log', {
         caseId,
         platform,
-        text: `[FOLLOWING] Commencing 3-second continuous scroll & screenshot capture for Following list...`,
+        text: `[FOLLOWING] Opening @${resolvedHandle || 'target'}'s Following list...`,
         type: 'info'
       });
 
-      const maxFollowingSnapshots = 6;
+      let followingClicked = await page.evaluate(() => {
+        const allLinks = Array.from(document.querySelectorAll('a'));
+        const link = allLinks.find(a => {
+          const href = (a.getAttribute('href') || '').toLowerCase();
+          return href.includes('/following') || href.endsWith('/following/');
+        });
+        if (link) {
+          link.scrollIntoView({ block: 'center' });
+          link.click();
+          return true;
+        }
+
+        const allItems = Array.from(document.querySelectorAll('header li, main header li, ul li, header a, main a'));
+        for (const item of allItems) {
+          if ((item.innerText || '').toLowerCase().includes('following')) {
+            const clickTarget = item.querySelector('a, button, span') || item;
+            clickTarget.click();
+            return true;
+          }
+        }
+        return false;
+      });
+
+      if (!followingClicked) {
+        try {
+          const locator = page.locator('a[href*="following" i], header li:has-text("following" i)').first();
+          if (await locator.isVisible({ timeout: 2500 })) {
+            await locator.click({ force: true });
+            followingClicked = true;
+          }
+        } catch (_) {}
+      }
+
+      // Wait for dialog modal to appear
+      try {
+        await page.locator('div[role="dialog"]').first().waitFor({ state: 'visible', timeout: 4000 });
+      } catch (_) {}
+
+      await new Promise(r => setTimeout(r, 2500));
+
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: `[FOLLOWING] Commencing 3-second scroll & screenshot capture for Following...`,
+        type: 'info'
+      });
+
+      const maxFollowingSnapshots = 5;
       for (let fo = 1; fo <= maxFollowingSnapshots; fo++) {
         if (captureSession.stopRequested || page.isClosed()) break;
         await takeAndSaveScreenshot(captureSession, 'target_following_list', fo, sender);
@@ -803,25 +840,30 @@ async function handleInstagramFlow(captureSession, sender) {
           sender.send('capture:log', {
             caseId,
             platform,
-            text: `[SCROLL] Scrolled Following modal (Snapshot #${fo} captured). Next snapshot in 3s...`,
+            text: `[SCROLL] Scrolled Following list (Snapshot #${fo} captured). Next snapshot in 3s...`,
             type: 'info'
           });
+
           await page.evaluate(() => {
             const dialog = document.querySelector('div[role="dialog"]');
             if (dialog) {
-              const scrollable = Array.from(dialog.querySelectorAll('div')).find(
-                el => el.scrollHeight > el.clientHeight && el.clientHeight > 150
+              const scrollables = Array.from(dialog.querySelectorAll('div')).filter(
+                el => el.scrollHeight > el.clientHeight && el.clientHeight > 80
               );
-              if (scrollable) scrollable.scrollTop += 550;
+              for (const s of scrollables) {
+                s.scrollTop += 500;
+              }
+            } else {
+              window.scrollBy(0, 500);
             }
           });
           await page.mouse.move(600, 450);
-          await page.mouse.wheel(0, 550);
+          await page.mouse.wheel(0, 500);
           await new Promise(r => setTimeout(r, 3000));
         }
       }
 
-      // Close following modal
+      // Dismiss dialog
       try {
         const closeBtn = page.locator('div[role="dialog"] button, svg[aria-label="Close"]').first();
         if (await closeBtn.isVisible({ timeout: 1500 })) {
@@ -832,9 +874,6 @@ async function handleInstagramFlow(captureSession, sender) {
         await new Promise(r => setTimeout(r, 1500));
       } catch (_) {}
     }
-  } catch (foErr) {
-    console.warn('Following capture notice:', foErr.message);
-  }
 }
 
 /**
