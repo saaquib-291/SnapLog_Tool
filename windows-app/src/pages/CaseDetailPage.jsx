@@ -17,7 +17,8 @@ import {
   KeyRound,
   Eye,
   EyeOff,
-  Trash2
+  Trash2,
+  MessageSquare
 } from 'lucide-react';
 import caseService from '../services/caseService';
 import captureService from '../services/captureService';
@@ -38,6 +39,7 @@ const CaseDetailPage = () => {
   const [evidenceList, setEvidenceList] = useState([]);
   const [targetUsername, setTargetUsername] = useState('');
   const [targetPassword, setTargetPassword] = useState('');
+  const [targetChatUser, setTargetChatUser] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
@@ -157,7 +159,8 @@ const CaseDetailPage = () => {
         addLog(`[SECURITY] Connecting to Electron automation engine...`, 'info');
         await captureService.startCapture(caseData.id, platform, {
           username: targetUsername.trim(),
-          password: targetPassword.trim()
+          password: targetPassword.trim(),
+          targetChatUser: targetChatUser.trim()
         });
       } else {
         // Fallback simulated progress for browser-only dev testing
@@ -329,7 +332,7 @@ const CaseDetailPage = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <KeyRound size={16} style={{ color: '#2563eb' }} />
               <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, color: '#0f172a' }}>
-                Volatile Session Credentials (For Auto-Fill)
+                Volatile Session Credentials & Chat Target (For Auto-Fill)
               </h3>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '0.2rem 0.6rem', borderRadius: '20px', fontWeight: 600 }}>
@@ -338,7 +341,7 @@ const CaseDetailPage = () => {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
             <div>
               <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#475569', marginBottom: '0.25rem' }}>
                 Target Username / Handle / Email
@@ -348,7 +351,7 @@ const CaseDetailPage = () => {
                 <input
                   className="form-input"
                   type="text"
-                  placeholder="e.g. @victim_user or target_email@domain.com"
+                  placeholder="e.g. amxn360 or victim@email.com"
                   value={targetUsername}
                   onChange={(e) => setTargetUsername(e.target.value)}
                   style={{ paddingLeft: '2.25rem', fontSize: '0.8125rem' }}
@@ -388,6 +391,23 @@ const CaseDetailPage = () => {
                 >
                   {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#475569', marginBottom: '0.25rem' }}>
+                Target Chat / Account Name <span style={{ fontWeight: 400, color: '#94a3b8' }}>(Optional)</span>
+              </label>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <MessageSquare size={14} style={{ position: 'absolute', left: '0.75rem', color: '#94a3b8', pointerEvents: 'none', zIndex: 1 }} />
+                <input
+                  className="form-input"
+                  type="text"
+                  placeholder="e.g. aditya, diganth, target_user"
+                  value={targetChatUser}
+                  onChange={(e) => setTargetChatUser(e.target.value)}
+                  style={{ paddingLeft: '2.25rem', fontSize: '0.8125rem' }}
+                />
               </div>
             </div>
           </div>

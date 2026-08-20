@@ -102,6 +102,7 @@ async function handleStart(event, data) {
     // Retrieve credentials strictly from in-memory payload (never stored in DB)
     let creds = data.credentials;
     const targetUsername = (creds && creds.username) ? creds.username.replace(/^@/, '').trim() : '';
+    const targetChatUser = (creds && creds.targetChatUser) ? creds.targetChatUser.replace(/^@/, '').trim() : '';
 
     // Auto-fill login credentials if provided in memory
     if (creds && creds.username) {
@@ -125,6 +126,7 @@ async function handleStart(event, data) {
       caseId,
       platform,
       targetUsername,
+      targetChatUser,
       platformConfig,
       startedAt: new Date(),
       status: 'in_progress',
@@ -356,63 +358,172 @@ async function handleInstagramFlow(captureSession, sender) {
   // 1. Dismiss any open note or modal prompt if visible
   await dismissInstagramPopups(page, sender, caseId);
 
-  sender.send('capture:log', {
-    caseId,
-    platform,
-    text: '[CHATS] Locating 1st conversation thread under Messages list...',
-    type: 'info'
-  });
+  const targetChat = (captureSession.targetChatUser || '').trim();
+  let foundChat = false;
+  let chatSessionLabel = targetChat ? `@${targetChat}` : 'Chat Thread #1';
 
-  // 2. Identify exact pixel coordinates of 1st chat conversation below Messages heading
-  let clickTarget = null;
-  try {
-    clickTarget = await page.evaluate(() => {
-      // Find "Messages" heading
-      const all = Array.from(document.querySelectorAll('span, div, h2, h3'));
-      const msgHdr = all.find(el => (el.textContent || '').trim() === 'Messages' && el.children.length === 0);
-      const hdrBottom = msgHdr ? msgHdr.getBoundingClientRect().bottom : 220;
-
-      // Find all rows in left sidebar below the Messages heading
-      const candidates = Array.from(document.querySelectorAll('a[href*="/direct/t/"], div[role="button"], div[role="listitem"], div[tabindex="0"]'));
-      const validRows = candidates.filter(row => {
-        const r = row.getBoundingClientRect();
-        return r.left < 450 && r.top >= (hdrBottom - 10) && r.height >= 40 && r.width >= 120;
-      });
-
-      if (validRows.length > 0) {
-        const target = validRows[0];
-        target.scrollIntoView({ block: 'center' });
-        const r = target.getBoundingClientRect();
-        return { x: r.left + r.width / 2, y: r.top + r.height / 2, hasDirectLink: !!target.closest('a[href*="/direct/t/"]') };
-      }
-
-      // Fallback: any direct thread link
-      const directLink = document.querySelector('a[href*="/direct/t/"]');
-      if (directLink) {
-        const r = directLink.getBoundingClientRect();
-        return { x: r.left + r.width / 2, y: r.top + r.height / 2, hasDirectLink: true };
-      }
-
-      return null;
-    });
-  } catch (_) {}
-
-  if (clickTarget && clickTarget.x > 0 && clickTarget.y > 0) {
+  if (targetChat) {
     sender.send('capture:log', {
       caseId,
       platform,
-      text: '[CHATS] Found 1st conversation thread. Clicking to open chat history...',
+      text: `[CHATS] 🔍 Locating specific conversation thread for user: @${targetChat}...`,
       type: 'info'
     });
-    await page.mouse.click(clickTarget.x, clickTarget.y);
-  } else {
-    // Fallback locator clicks
+
+    // Strategy 1: Scan visible sidebar conversation rows for exact/partial contact name match
     try {
-      const fallback = page.locator('a[href*="/direct/t/"], div[role="list"] a, div[aria-label="Chats"] div[role="button"]').first();
-      if (await fallback.isVisible({ timeout: 2500 })) {
-        await fallback.click({ force: true });
+      const matchTarget = await page.evaluate((target) => {
+        const rows = Array.from(document.querySelectorAll('a[href*="/direct/t/"], div[role="button"], div[role="listitem"]'));
+        for (const r of rows) {
+          const text = (r.innerText || '').toLowerCase();
+          if (text.includes(target.toLowerCase())) {
+            r.scrollIntoView({ block: 'center' });
+            const rect = r.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+              return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, name: r.innerText.split('\n')[0] };
+            }
+          }
+        }
+        return null;
+      }, targetChat);
+
+      if (matchTarget && matchTarget.x > 0 && matchTarget.y > 0) {
+        sender.send('capture:log', {
+          caseId,
+          platform,
+          text: `[CHATS] Found matching chat row "${matchTarget.name}". Opening conversation...`,
+          type: 'success'
+        });
+        await page.mouse.click(matchTarget.x, matchTarget.y);
+        foundChat = true;
       }
     } catch (_) {}
+
+    // Strategy 2: Use Instagram Inbox Search bar
+    if (!foundChat) {
+      try {
+        const searchInput = page.locator('input[placeholder*="Search" i], input[aria-label*="Search" i]').first();
+        if (await searchInput.isVisible({ timeout: 2500 })) {
+          await searchInput.click();
+          await searchInput.fill(targetChat);
+          await searchInput.dispatchEvent('input');
+          await new Promise(r => setTimeout(r, 2000));
+
+          const resultClicked = await page.evaluate((target) => {
+            const items = Array.from(document.querySelectorAll('div[role="none"] div[role="button"], div[role="listitem"], a[href*="/direct/t/"], div[role="dialog"] div[role="button"]'));
+            for (const item of items) {
+              if ((item.innerText || '').toLowerCase().includes(target.toLowerCase())) {
+                item.click();
+                return true;
+              }
+            }
+            if (items.length > 0) {
+              items[0].click();
+              return true;
+            }
+            return false;
+          }, targetChat);
+
+          if (resultClicked) {
+            foundChat = true;
+            sender.send('capture:log', {
+              caseId,
+              platform,
+              text: `[CHATS] Selected search result for @${targetChat}. Loading conversation...`,
+              type: 'success'
+            });
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Strategy 3: Direct Profile Message Button Navigation fallback
+    if (!foundChat) {
+      try {
+        sender.send('capture:log', {
+          caseId,
+          platform,
+          text: `[CHATS] Navigating directly to @${targetChat} profile to initiate chat thread...`,
+          type: 'info'
+        });
+        await page.goto(`https://www.instagram.com/${targetChat}/`, { waitUntil: 'domcontentloaded' });
+        await new Promise(r => setTimeout(r, 3500));
+        await dismissInstagramPopups(page, sender, caseId);
+
+        const msgBtn = page.locator('div[role="button"]:has-text("Message"), button:has-text("Message"), a:has-text("Message")').first();
+        if (await msgBtn.isVisible({ timeout: 3500 })) {
+          await msgBtn.click();
+          foundChat = true;
+          sender.send('capture:log', {
+            caseId,
+            platform,
+            text: `[CHATS] Clicked Message button on @${targetChat}'s profile. Direct conversation loaded!`,
+            type: 'success'
+          });
+        }
+      } catch (_) {}
+    }
+  }
+
+  // Fallback: If no specific chat provided or not found, open 1st chat below Messages
+  if (!foundChat) {
+    sender.send('capture:log', {
+      caseId,
+      platform,
+      text: '[CHATS] Locating 1st conversation thread under Messages list...',
+      type: 'info'
+    });
+
+    let clickTarget = null;
+    try {
+      clickTarget = await page.evaluate(() => {
+        // Find "Messages" heading
+        const all = Array.from(document.querySelectorAll('span, div, h2, h3'));
+        const msgHdr = all.find(el => (el.textContent || '').trim() === 'Messages' && el.children.length === 0);
+        const hdrBottom = msgHdr ? msgHdr.getBoundingClientRect().bottom : 220;
+
+        // Find all rows in left sidebar below the Messages heading
+        const candidates = Array.from(document.querySelectorAll('a[href*="/direct/t/"], div[role="button"], div[role="listitem"], div[tabindex="0"]'));
+        const validRows = candidates.filter(row => {
+          const r = row.getBoundingClientRect();
+          return r.left < 450 && r.top >= (hdrBottom - 10) && r.height >= 40 && r.width >= 120;
+        });
+
+        if (validRows.length > 0) {
+          const target = validRows[0];
+          target.scrollIntoView({ block: 'center' });
+          const r = target.getBoundingClientRect();
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2, hasDirectLink: !!target.closest('a[href*="/direct/t/"]') };
+        }
+
+        // Fallback: any direct thread link
+        const directLink = document.querySelector('a[href*="/direct/t/"]');
+        if (directLink) {
+          const r = directLink.getBoundingClientRect();
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2, hasDirectLink: true };
+        }
+
+        return null;
+      });
+    } catch (_) {}
+
+    if (clickTarget && clickTarget.x > 0 && clickTarget.y > 0) {
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: '[CHATS] Found 1st conversation thread. Clicking to open chat history...',
+        type: 'info'
+      });
+      await page.mouse.click(clickTarget.x, clickTarget.y);
+    } else {
+      // Fallback locator clicks
+      try {
+        const fallback = page.locator('a[href*="/direct/t/"], div[role="list"] a, div[aria-label="Chats"] div[role="button"]').first();
+        if (await fallback.isVisible({ timeout: 2500 })) {
+          await fallback.click({ force: true });
+        }
+      } catch (_) {}
+    }
   }
 
   await new Promise(r => setTimeout(r, 4000));
@@ -421,7 +532,7 @@ async function handleInstagramFlow(captureSession, sender) {
   sender.send('capture:log', {
     caseId,
     platform,
-    text: '[CAPTURE] Starting 3-second continuous scroll & screenshot capture for Chat Thread #1...',
+    text: `[CAPTURE] Starting 3-second continuous scroll & screenshot capture for ${chatSessionLabel}...`,
     type: 'info'
   });
 
