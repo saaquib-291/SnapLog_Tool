@@ -351,7 +351,7 @@ const CaseDetailPage = () => {
                 <input
                   className="form-input"
                   type="text"
-                  placeholder="e.g. target_handle or user@domain.com"
+                  placeholder="Enter username or email"
                   value={targetUsername}
                   onChange={(e) => setTargetUsername(e.target.value)}
                   style={{ paddingLeft: '2.25rem', fontSize: '0.8125rem' }}
@@ -368,7 +368,7 @@ const CaseDetailPage = () => {
                 <input
                   className="form-input"
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Password for automated login"
+                  placeholder="Enter password"
                   value={targetPassword}
                   onChange={(e) => setTargetPassword(e.target.value)}
                   style={{ paddingLeft: '2.25rem', paddingRight: '2.25rem', fontSize: '0.8125rem' }}
@@ -403,7 +403,7 @@ const CaseDetailPage = () => {
                 <input
                   className="form-input"
                   type="text"
-                  placeholder="e.g. contact_handle or target_user"
+                  placeholder="Enter chat username (Optional)"
                   value={targetChatUser}
                   onChange={(e) => setTargetChatUser(e.target.value)}
                   style={{ paddingLeft: '2.25rem', fontSize: '0.8125rem' }}
