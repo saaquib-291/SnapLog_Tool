@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SnapLog Section Enum",
+  "description": "The fixed list of valid section names for evidence capture. Both Windows and Android platform configs must use exactly these strings. The report generator groups evidence by these sections.",
+  "sections": [
+    "timeline",
+    "posts",
+    "messages",
+    "friends",
+    "followers",
+    "following",
+    "account_info"
+  ],
+  "section_display_names": {
+    "timeline": "Timeline / Feed",
+    "posts": "Posts / Media",
+    "messages": "Messages / Chat",
+    "friends": "Friends List",
+    "followers": "Followers List",
+    "following": "Following List",
+    "account_info": "Account Information / Profile"
+  }
+}
