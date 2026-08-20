@@ -1038,12 +1038,28 @@ async function waitForPlatformLoginOrCaptcha(page, platform, sender, caseId) {
     let sessionState = { isLoggedIn: false };
     let hasChallenge = false;
 
+    // 1. Check Authenticated Session Cookies via Playwright Browser Context
+    let isCookieAuth = false;
     try {
-      // Check platform-specific DOM state for REAL authenticated login
+      const cookies = await page.context().cookies();
+      const platLower = platform.toLowerCase();
+
+      if (platLower === 'instagram') {
+        isCookieAuth = cookies.some(c => c.name === 'sessionid' && c.value && c.value.length > 5);
+      } else if (platLower === 'facebook') {
+        isCookieAuth = cookies.some(c => (c.name === 'c_user' || c.name === 'xs') && c.value);
+      } else if (platLower === 'twitter' || platLower === 'x') {
+        isCookieAuth = cookies.some(c => (c.name === 'auth_token' || c.name === 'twid') && c.value);
+      } else if (platLower === 'google' || platLower === 'gmail') {
+        isCookieAuth = cookies.some(c => (c.name === 'SID' || c.name === 'SSID' || c.name === 'HSID') && c.value);
+      }
+    } catch (_) {}
+
+    // 2. Check DOM Elements
+    try {
       sessionState = await page.evaluate((plat) => {
         const text = document.body?.innerText || '';
         const url = window.location.href || '';
-        const pathname = window.location.pathname || '';
 
         // 1. WhatsApp Web Login Check
         if (plat === 'whatsapp') {
@@ -1059,49 +1075,38 @@ async function waitForPlatformLoginOrCaptcha(page, platform, sender, caseId) {
           return { isLoggedIn: isLinked, hasQr };
         }
 
-        // 3. Instagram Login Check
+        // 3. Instagram DOM Check (Explicit Authenticated Icons)
         if (plat === 'instagram') {
+          const hasDirect = !!document.querySelector('a[href*="/direct/inbox/"], a[href*="/direct/t/"]');
           const svgs = Array.from(document.querySelectorAll('svg[aria-label]'));
-          const hasNav = svgs.some(s => {
+          const hasNavIcons = svgs.some(s => {
             const label = (s.getAttribute('aria-label') || '').toLowerCase();
-            return ['home', 'direct', 'messenger', 'explore', 'search', 'messages', 'new post', 'profile'].includes(label);
+            return label === 'direct' || label === 'messenger' || label === 'messages';
           });
-          const hasLinks = !!document.querySelector('a[href*="/direct/inbox/"], a[href*="/direct/t/"], a[href*="/accounts/edit/"]');
+          const hasLogoutOrSettings = !!document.querySelector('a[href*="/accounts/edit/"], svg[aria-label="Settings"]');
 
-          const buttons = Array.from(document.querySelectorAll('button'));
-          const hasSaveInfo = buttons.some(b => {
-            const t = (b.innerText || '').toLowerCase();
-            return t.includes('save info') || t.includes('not now') || t.includes('save information');
-          });
-
-          const onOneTap = url.includes('/accounts/onetap/') || url.includes('/accounts/manage_access');
-          const onFeed = (pathname === '/' || pathname === '') && !document.querySelector("input[name='password']");
-          const onProfile = pathname.length > 2 && !pathname.includes('/accounts/') && !document.querySelector("input[name='password']");
-          const onDirect = pathname.includes('/direct/');
-
-          const isActuallyLoggedIn = hasNav || hasLinks || hasSaveInfo || onOneTap || onFeed || onProfile || onDirect;
           const errorAlert = document.querySelector('p#slfErrorAlert, div[role="alert"]')?.innerText || '';
           const onLoginPage = !!document.querySelector("input[name='password'], input[name='username']");
-          return { isLoggedIn: isActuallyLoggedIn, errorAlert, onLoginPage };
+          return { isLoggedIn: hasDirect || hasNavIcons || hasLogoutOrSettings, errorAlert, onLoginPage };
         }
 
         // 4. Facebook Login Check
         if (plat === 'facebook') {
-          const hasLoggedInNav = !!document.querySelector('div[role="navigation"] a[aria-label="Home"], a[aria-label="Facebook"], a[aria-label="Messenger"]');
+          const hasLoggedInNav = !!document.querySelector('a[aria-label="Messenger"], a[aria-label="Your profile"]');
           const onLoginPage = !!document.querySelector("input[name='pass'], input#email");
           return { isLoggedIn: hasLoggedInNav, onLoginPage };
         }
 
         // 5. Twitter / X Login Check
         if (plat === 'twitter' || plat === 'x') {
-          const hasLoggedInNav = !!document.querySelector('a[data-testid="AppTabBar_Home_Link"], a[aria-label="Direct Messages"], a[data-testid="AppTabBar_Profile_Link"]');
+          const hasLoggedInNav = !!document.querySelector('a[aria-label="Direct Messages"], a[data-testid="AppTabBar_DirectMessage_Link"]');
           const onLoginPage = !!document.querySelector("input[autocomplete='username'], input[name='password']");
           return { isLoggedIn: hasLoggedInNav, onLoginPage };
         }
 
         // 6. Google Login Check
         if (plat === 'google' || plat === 'gmail') {
-          const hasLoggedInNav = !!document.querySelector('div[role="main"], a[href*="SignOutOptions"]') || Array.from(document.querySelectorAll('a[aria-label]')).some(a => (a.getAttribute('aria-label') || '').toLowerCase().includes('google account'));
+          const hasLoggedInNav = !!document.querySelector('a[href*="SignOutOptions"]') || Array.from(document.querySelectorAll('a[aria-label]')).some(a => (a.getAttribute('aria-label') || '').toLowerCase().includes('google account'));
           const onLoginPage = !!document.querySelector("input[type='password'], input[type='email']");
           return { isLoggedIn: hasLoggedInNav, onLoginPage };
         }
@@ -1109,13 +1114,14 @@ async function waitForPlatformLoginOrCaptcha(page, platform, sender, caseId) {
         return { isLoggedIn: false };
       }, platform.toLowerCase());
     } catch (_) {
-      // Ignore transient errors caused by navigation or page reloads
       await new Promise(r => setTimeout(r, 1500));
       continue;
     }
 
+    const isFullyAuthenticated = isCookieAuth || sessionState.isLoggedIn;
+
     // Successfully logged in!
-    if (sessionState.isLoggedIn) {
+    if (isFullyAuthenticated) {
       sender.send('capture:log', {
         caseId,
         platform,
