@@ -919,11 +919,11 @@ async function handleInstagramFlow(captureSession, sender) {
       sender.send('capture:log', {
         caseId,
         platform,
-        text: `[POSTS] Scanning @${resolvedHandle || 'target'}'s profile grid for posts and comments...`,
+        text: `[POSTS] Scanning @${resolvedHandle || 'target'}'s profile grid for all available posts...`,
         type: 'info'
       });
 
-      // Ensure we are back on the profile page
+      // Ensure we are on the target profile page
       if (resolvedHandle && !page.url().includes(`instagram.com/${resolvedHandle}`)) {
         try {
           await page.goto(`https://www.instagram.com/${resolvedHandle}/`, { waitUntil: 'domcontentloaded', timeout: 15000 });
@@ -932,7 +932,14 @@ async function handleInstagramFlow(captureSession, sender) {
         } catch (_) {}
       }
 
-      // Extract post links from profile grid
+      // Pre-scroll profile to trigger lazy-loading of post thumbnails
+      try {
+        await page.evaluate(() => window.scrollBy(0, 800));
+        await new Promise(r => setTimeout(r, 1500));
+        await page.evaluate(() => window.scrollTo(0, 0));
+      } catch (_) {}
+
+      // Extract all post links from profile grid
       let postLinks = [];
       try {
         postLinks = await page.evaluate(() => {
@@ -944,7 +951,7 @@ async function handleInstagramFlow(captureSession, sender) {
               uniqueHrefs.push(href);
             }
           }
-          return uniqueHrefs.slice(0, 6); // Capture up to 6 recent posts
+          return uniqueHrefs.slice(0, 10); // Capture up to 10 available posts
         });
       } catch (_) {}
 
@@ -952,14 +959,14 @@ async function handleInstagramFlow(captureSession, sender) {
         sender.send('capture:log', {
           caseId,
           platform,
-          text: `[POSTS] No public posts found on @${resolvedHandle || 'target'}'s grid (or account is private/empty).`,
+          text: `[POSTS] No posts found on @${resolvedHandle || 'target'}'s profile grid (account may have 0 posts or be private).`,
           type: 'info'
         });
       } else {
         sender.send('capture:log', {
           caseId,
           platform,
-          text: `[POSTS] Found ${postLinks.length} post(s) to process. Starting automated comment forensic inspection...`,
+          text: `[POSTS] Discovered ${postLinks.length} post(s). Opening each post to capture media and scroll through all comments...`,
           type: 'success'
         });
 
@@ -971,11 +978,11 @@ async function handleInstagramFlow(captureSession, sender) {
           sender.send('capture:log', {
             caseId,
             platform,
-            text: `[POST #${postNum}] Opening post ${postNum}/${postLinks.length} (${postHref})...`,
+            text: `[POST #${postNum}/${postLinks.length}] Opening post (${postHref})...`,
             type: 'info'
           });
 
-          // Navigate to post
+          // Open post
           try {
             await page.goto(`https://www.instagram.com${postHref}`, { waitUntil: 'domcontentloaded', timeout: 15000 });
             await new Promise(r => setTimeout(r, 3500));
@@ -984,26 +991,43 @@ async function handleInstagramFlow(captureSession, sender) {
             continue;
           }
 
-          // Post Overview screenshot
+          // Post Overview Screenshot
           await takeAndSaveScreenshot(captureSession, `target_post_${postNum}_overview`, 1, sender);
           if (captureSession.stopRequested || page.isClosed()) break;
 
-          // Expand hidden comments ("View more comments" / "+" buttons)
-          try {
-            await page.evaluate(() => {
-              const moreBtns = Array.from(document.querySelectorAll('ul button, div[role="button"], span[role="button"], button'));
-              for (const b of moreBtns) {
-                const txt = (b.innerText || '').toLowerCase();
-                if (txt.includes('view') || txt.includes('more comments') || txt.includes('load more') || txt.includes('view all')) {
-                  b.click();
+          // Expand hidden comments ("View more comments" / "+" / "View all comments")
+          for (let expand = 0; expand < 3; expand++) {
+            try {
+              const expanded = await page.evaluate(() => {
+                const moreBtns = Array.from(document.querySelectorAll('ul button, div[role="button"], span[role="button"], button, svg[aria-label*="Load" i], svg[aria-label*="more" i]'));
+                let clickedAny = false;
+                for (const b of moreBtns) {
+                  const txt = (b.innerText || '').toLowerCase();
+                  const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+                  if (txt.includes('view') || txt.includes('more comments') || txt.includes('load more') || txt.includes('view all') || aria.includes('load') || aria.includes('more')) {
+                    const btnTarget = b.closest('button, div[role="button"]') || b;
+                    btnTarget.click();
+                    clickedAny = true;
+                  }
                 }
-              }
-            });
-            await new Promise(r => setTimeout(r, 2000));
-          } catch (_) {}
+                return clickedAny;
+              });
+              if (expanded) await new Promise(r => setTimeout(r, 1500));
+              else break;
+            } catch (_) {
+              break;
+            }
+          }
 
-          // Auto-scroll comments column and capture comment snapshots
-          const maxCommentSnapshots = 4;
+          // Continuous downwards auto-scrolling through comments section
+          sender.send('capture:log', {
+            caseId,
+            platform,
+            text: `[COMMENTS] Auto-scrolling down comments for Post #${postNum}...`,
+            type: 'info'
+          });
+
+          const maxCommentSnapshots = 6;
           for (let cSeq = 1; cSeq <= maxCommentSnapshots; cSeq++) {
             if (captureSession.stopRequested || page.isClosed()) break;
             await takeAndSaveScreenshot(captureSession, `target_post_${postNum}_comments`, cSeq, sender);
@@ -1011,29 +1035,33 @@ async function handleInstagramFlow(captureSession, sender) {
               sender.send('capture:log', {
                 caseId,
                 platform,
-                text: `[SCROLL] Scrolled comments for Post #${postNum} (Snapshot #${cSeq} captured). Next snapshot in 3s...`,
+                text: `[SCROLL] Scrolled down comments for Post #${postNum} (Snapshot #${cSeq} captured). Next snapshot in 3s...`,
                 type: 'info'
               });
 
-              // Scroll inside comments container or page
+              // Scroll downwards inside comments container or page
               await page.evaluate(() => {
-                const commentsContainer = Array.from(document.querySelectorAll('article ul, div[role="dialog"] ul, ul, div')).find(
-                  el => el.scrollHeight > el.clientHeight && el.clientHeight > 150
+                const postContainer = document.querySelector('div[role="dialog"]') || document.querySelector('article') || document.body;
+                const scrollables = Array.from(postContainer.querySelectorAll('div, ul')).filter(
+                  el => el.scrollHeight > el.clientHeight && el.clientHeight > 120
                 );
-                if (commentsContainer) {
-                  commentsContainer.scrollTop += 500;
+                scrollables.sort((a, b) => b.scrollHeight - a.scrollHeight);
+                if (scrollables.length > 0) {
+                  scrollables[0].scrollTop += 450;
                 } else {
-                  window.scrollBy(0, 500);
+                  window.scrollBy(0, 450);
                 }
               });
-              await page.mouse.move(850, 450);
-              await page.mouse.wheel(0, 500);
+
+              // Centered mouse wheel over right-hand comments column
+              await page.mouse.move(880, 450);
+              await page.mouse.wheel(0, 450);
               await new Promise(r => setTimeout(r, 3000));
             }
           }
         }
 
-        // Return to profile page after completing posts
+        // Return to profile page after completing all posts
         if (resolvedHandle && !page.isClosed()) {
           try {
             await page.goto(`https://www.instagram.com/${resolvedHandle}/`, { waitUntil: 'domcontentloaded', timeout: 15000 });
