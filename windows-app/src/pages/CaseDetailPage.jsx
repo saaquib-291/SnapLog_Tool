@@ -318,7 +318,7 @@ const CaseDetailPage = () => {
                 Target Username / Handle / Email
               </label>
               <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <User size={14} style={{ position: 'absolute', left: '0.75rem', color: '#94a3b8' }} />
+                <User size={14} style={{ position: 'absolute', left: '0.75rem', color: '#94a3b8', pointerEvents: 'none', zIndex: 1 }} />
                 <input
                   className="form-input"
                   type="text"
@@ -335,7 +335,7 @@ const CaseDetailPage = () => {
                 Target Password / PIN
               </label>
               <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <Lock size={14} style={{ position: 'absolute', left: '0.75rem', color: '#94a3b8' }} />
+                <Lock size={14} style={{ position: 'absolute', left: '0.75rem', color: '#94a3b8', pointerEvents: 'none', zIndex: 1 }} />
                 <input
                   className="form-input"
                   type={showPassword ? 'text' : 'password'}
