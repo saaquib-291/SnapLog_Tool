@@ -1,6 +1,6 @@
 import React from 'react';
 import { Calendar, User, ArrowRight, CheckCircle2, Clock, UserCheck, Trash2 } from 'lucide-react';
-import { Badge } from './ui/table-20-utils/badge';
+import { Badge } from './ui/badge';
 
 const CaseCard = ({ case: caseItem, onClick, onDelete }) => {
   const platforms = caseItem.platforms || [];

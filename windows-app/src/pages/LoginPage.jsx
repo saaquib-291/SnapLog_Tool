@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, Lock, User, ArrowRight, ShieldAlert, Cpu, Database } from 'lucide-react';
 import authService from '../services/authService';
-import { Button } from '../components/ui/table-20-utils/button';
-import { Badge } from '../components/ui/table-20-utils/badge';
+import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
 
 const LoginPage = () => {
   const [username, setUsername] = useState('examiner001');

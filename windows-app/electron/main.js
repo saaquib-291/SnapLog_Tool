@@ -7,6 +7,9 @@ const captureHandlers = require('./ipc-handlers/captureHandlers');
 const { generatePanchnamaPdf } = require('../report-pipeline-bridge/pdfGenerator');
 const sqlite = require('./db/sqlite');
 
+// Suppress benign Chromium GPU shader cache lock warnings on Windows
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+
 // Keep a global reference of the window object to prevent garbage collection
 let mainWindow;
 

@@ -17,14 +17,15 @@ import {
   KeyRound,
   Eye,
   EyeOff,
-  Trash2
+  Trash2,
+  MessageSquare
 } from 'lucide-react';
 import caseService from '../services/caseService';
 import captureService from '../services/captureService';
 import Navbar from '../components/Navbar';
 import PlatformButton from '../components/PlatformButton';
-import { Button } from '../components/ui/table-20-utils/button';
-import { Badge } from '../components/ui/table-20-utils/badge';
+import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
 
 const CaseDetailPage = () => {
   const { id } = useParams();
@@ -38,6 +39,7 @@ const CaseDetailPage = () => {
   const [evidenceList, setEvidenceList] = useState([]);
   const [targetUsername, setTargetUsername] = useState('');
   const [targetPassword, setTargetPassword] = useState('');
+  const [targetChatUser, setTargetChatUser] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
@@ -47,26 +49,21 @@ const CaseDetailPage = () => {
         const data = await caseService.getCaseById(id);
         setCaseData(data);
 
-        // Pre-populate mock captured evidence if already completed
-        if (data?.platforms?.includes('instagram')) {
-          setEvidenceList([
-            {
-              id: 'SCR-001',
-              section: 'Timeline / Profile',
-              platform: 'Instagram',
-              timestamp: new Date().toISOString(),
-              hash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
-              file: 'instagram_timeline_001_20260816T143000.png'
-            },
-            {
-              id: 'SCR-002',
-              section: 'Followers List',
-              platform: 'Instagram',
-              timestamp: new Date(Date.now() - 30000).toISOString(),
-              hash: '5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8',
-              file: 'instagram_followers_002_20260816T143030.png'
-            }
-          ]);
+        // Load real captured evidence artifacts from database
+        if (data && Array.isArray(data.artifacts) && data.artifacts.length > 0) {
+          setEvidenceList(
+            data.artifacts.map((a, idx) => ({
+              id: a.id ? (a.id.startsWith('SCR-') ? a.id : `SCR-${String(a.sequenceNumber || idx + 1).padStart(3, '0')}`) : `SCR-${String(idx + 1).padStart(3, '0')}`,
+              rawId: a.id,
+              section: (a.section || 'Capture').replace(/_/g, ' '),
+              platform: a.platform || data.targetPlatform || 'Instagram',
+              timestamp: a.timestamp || data.createdAt,
+              hash: a.hash || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+              file: a.filePath || ''
+            }))
+          );
+        } else {
+          setEvidenceList([]);
         }
       } catch (err) {
         setError('Failed to load case: ' + err.message);
@@ -81,6 +78,36 @@ const CaseDetailPage = () => {
   // Real-time live log & event listeners from Playwright / Electron backend
   useEffect(() => {
     if (!window.electronAPI) return;
+
+    const unsubProgress = window.electronAPI.onCaptureProgress?.((data) => {
+      if (!data) return;
+      const art = data.artifact || data;
+      const hash = art.hash || data.hash;
+      if (!hash) return;
+
+      const seq = art.sequenceNumber || data.screenshotNumber || data.sequenceNumber;
+      const section = (art.section || data.section || 'Capture').replace(/_/g, ' ');
+      const platform = art.platform || data.platform || 'Instagram';
+      const timestamp = art.timestamp || data.timestamp || new Date().toISOString();
+      const filePath = art.filePath || data.filePath || '';
+      const rawId = art.id || data.id || `SCR-${String(seq || 1).padStart(3, '0')}`;
+
+      setEvidenceList((prev) => {
+        if (prev.some(item => (item.rawId && item.rawId === rawId) || (item.hash && item.hash === hash))) {
+          return prev;
+        }
+        const newEntry = {
+          id: `SCR-${String(seq || prev.length + 1).padStart(3, '0')}`,
+          rawId,
+          section,
+          platform,
+          timestamp,
+          hash,
+          file: filePath
+        };
+        return [newEntry, ...prev];
+      });
+    });
 
     const unsubLog = window.electronAPI.onCaptureLog?.((data) => {
       if (data && data.text) {
@@ -107,6 +134,7 @@ const CaseDetailPage = () => {
     });
 
     return () => {
+      if (typeof unsubProgress === 'function') unsubProgress();
       if (typeof unsubLog === 'function') unsubLog();
       if (typeof unsubBrowserClosed === 'function') unsubBrowserClosed();
       if (typeof unsubCompleted === 'function') unsubCompleted();
@@ -131,7 +159,8 @@ const CaseDetailPage = () => {
         addLog(`[SECURITY] Connecting to Electron automation engine...`, 'info');
         await captureService.startCapture(caseData.id, platform, {
           username: targetUsername.trim(),
-          password: targetPassword.trim()
+          password: targetPassword.trim(),
+          targetChatUser: targetChatUser.trim()
         });
       } else {
         // Fallback simulated progress for browser-only dev testing
@@ -303,7 +332,7 @@ const CaseDetailPage = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <KeyRound size={16} style={{ color: '#2563eb' }} />
               <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, color: '#0f172a' }}>
-                Volatile Session Credentials (For Auto-Fill)
+                Volatile Session Credentials & Chat Target (For Auto-Fill)
               </h3>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.75rem', color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '0.2rem 0.6rem', borderRadius: '20px', fontWeight: 600 }}>
@@ -312,7 +341,7 @@ const CaseDetailPage = () => {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
             <div>
               <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#475569', marginBottom: '0.25rem' }}>
                 Target Username / Handle / Email
@@ -322,7 +351,7 @@ const CaseDetailPage = () => {
                 <input
                   className="form-input"
                   type="text"
-                  placeholder="e.g. @victim_user or target_email@domain.com"
+                  placeholder="Enter username or email"
                   value={targetUsername}
                   onChange={(e) => setTargetUsername(e.target.value)}
                   style={{ paddingLeft: '2.25rem', fontSize: '0.8125rem' }}
@@ -339,7 +368,7 @@ const CaseDetailPage = () => {
                 <input
                   className="form-input"
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Password for automated login"
+                  placeholder="Enter password"
                   value={targetPassword}
                   onChange={(e) => setTargetPassword(e.target.value)}
                   style={{ paddingLeft: '2.25rem', paddingRight: '2.25rem', fontSize: '0.8125rem' }}
@@ -362,6 +391,23 @@ const CaseDetailPage = () => {
                 >
                   {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#475569', marginBottom: '0.25rem' }}>
+                Target Chat / Account Name <span style={{ fontWeight: 400, color: '#94a3b8' }}>(Optional)</span>
+              </label>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <MessageSquare size={14} style={{ position: 'absolute', left: '0.75rem', color: '#94a3b8', pointerEvents: 'none', zIndex: 1 }} />
+                <input
+                  className="form-input"
+                  type="text"
+                  placeholder="Enter chat username (Optional)"
+                  value={targetChatUser}
+                  onChange={(e) => setTargetChatUser(e.target.value)}
+                  style={{ paddingLeft: '2.25rem', fontSize: '0.8125rem' }}
+                />
               </div>
             </div>
           </div>

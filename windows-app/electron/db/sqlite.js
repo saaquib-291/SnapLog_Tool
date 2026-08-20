@@ -97,59 +97,15 @@ async function initDatabase() {
     } catch (_) {}
 
     // Seed default records if empty
-    const stmt = db.prepare('SELECT COUNT(*) as count FROM cases');
-    let count = 0;
-    if (stmt.step()) {
-      count = stmt.getAsObject().count;
-    }
-    stmt.free();
+    // Always sync any cases from cases.json into SQLite
+    syncFromJson();
 
-    if (count === 0) {
-      // Seed initial cases from cases.json if available
-      let seedCases = [
-        {
-          id: 'CASE2026-001',
-          title: 'Sample Investigation Case',
-          description: 'Demo case for Panchnama evidence capture workflow',
-          victimName: 'Aarav Mehta',
-          examinerId: 'examiner001',
-          createdAt: '2026-08-15T10:30:00Z',
-          platforms: []
-        },
-        {
-          id: 'CASE2026-002',
-          title: 'Cyberbullying Investigation',
-          description: 'Investigation into online harassment',
-          victimName: 'Pooja Sharma',
-          examinerId: 'examiner001',
-          createdAt: '2026-08-10T14:15:00Z',
-          platforms: ['instagram', 'facebook']
-        }
-      ];
+    db.run(
+      'INSERT OR IGNORE INTO examiners (id, username, email, role, department, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      ['examiner001', 'examiner001', 'examiner001@forensic.gov.in', 'Lead Forensic Examiner', 'Digital Evidence Unit', new Date().toISOString()]
+    );
 
-      if (fs.existsSync(jsonPath)) {
-        try {
-          const raw = fs.readFileSync(jsonPath, 'utf8');
-          seedCases = JSON.parse(raw);
-        } catch (_) {}
-      }
-
-      for (const c of seedCases) {
-        db.run(
-          'INSERT OR IGNORE INTO cases (id, title, description, victim_name, examiner_id, platforms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [c.id, c.title, c.description || '', c.victimName || 'Aarav Mehta', c.examinerId || 'examiner001', JSON.stringify(c.platforms || []), c.createdAt || new Date().toISOString()]
-        );
-      }
-
-      db.run(
-        'INSERT OR IGNORE INTO examiners (id, username, email, role, department, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-        ['examiner001', 'examiner001', 'examiner001@forensic.gov.in', 'Lead Forensic Examiner', 'Digital Evidence Unit', new Date().toISOString()]
-      );
-
-      console.log('[SQLITE] Seeded default forensic cases into SQLite database.');
-      persistToDisk();
-    }
-
+    persistToDisk();
     return true;
   } catch (error) {
     console.error('[SQLITE] Failed to initialize SQLite database:', error.message);
@@ -158,11 +114,41 @@ async function initDatabase() {
 }
 
 /**
+ * Synchronize any cases from cases.json backup into SQLite table
+ */
+function syncFromJson() {
+  if (!db || !fs.existsSync(jsonPath)) return;
+  try {
+    const raw = fs.readFileSync(jsonPath, 'utf8');
+    const cases = JSON.parse(raw);
+    if (Array.isArray(cases)) {
+      for (const c of cases) {
+        if (!c.id) continue;
+        db.run(
+          'INSERT OR IGNORE INTO cases (id, title, description, victim_name, examiner_id, target_platform, platforms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [
+            c.id,
+            c.title || 'Investigation Case',
+            c.description || '',
+            c.victimName || 'Aarav Mehta',
+            c.examinerId || 'examiner001',
+            c.targetPlatform || (c.platforms && c.platforms[0]) || '',
+            JSON.stringify(c.platforms || (c.targetPlatform ? [c.targetPlatform] : [])),
+            c.createdAt || new Date().toISOString()
+          ]
+        );
+      }
+    }
+  } catch (_) {}
+}
+
+/**
  * Get all cases from SQLite
  */
 function getAllCases() {
   if (!db) return [];
   try {
+    syncFromJson();
     const stmt = db.prepare('SELECT id, title, description, victim_name as victimName, examiner_id as examinerId, target_platform as targetPlatform, platforms, created_at as createdAt FROM cases ORDER BY created_at DESC');
     const cases = [];
     while (stmt.step()) {
@@ -183,11 +169,12 @@ function getAllCases() {
 }
 
 /**
- * Get case by ID from SQLite
+ * Get case by ID from SQLite with associated evidence artifacts
  */
 function getCaseById(caseId) {
   if (!db) return null;
   try {
+    syncFromJson();
     const stmt = db.prepare('SELECT id, title, description, victim_name as victimName, examiner_id as examinerId, target_platform as targetPlatform, platforms, created_at as createdAt FROM cases WHERE id = ?');
     stmt.bind([caseId]);
     let result = null;
@@ -200,6 +187,18 @@ function getCaseById(caseId) {
       }
     }
     stmt.free();
+
+    if (result) {
+      const artStmt = db.prepare('SELECT id, case_id as caseId, platform, section, sequence_number as sequenceNumber, file_path as filePath, hash_sha256 as hash, captured_at as timestamp, integrity_status as status FROM evidence_artifacts WHERE case_id = ? ORDER BY sequence_number ASC, captured_at ASC');
+      artStmt.bind([caseId]);
+      const artifacts = [];
+      while (artStmt.step()) {
+        artifacts.push(artStmt.getAsObject());
+      }
+      artStmt.free();
+      result.artifacts = artifacts;
+    }
+
     return result;
   } catch (err) {
     console.error('[SQLITE] Error getting case by ID:', err.message);

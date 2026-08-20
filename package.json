@@ -2,10 +2,34 @@
   "name": "snaplog-tool-root",
   "version": "1.0.0",
   "private": true,
+  "workspaces": [
+    "windows-app"
+  ],
   "scripts": {
     "start": "npm start --prefix windows-app",
     "dev": "npm run dev --prefix windows-app",
     "build": "npm run build --prefix windows-app",
-    "react-build": "npm run react-build --prefix windows-app"
+    "react-build": "npm run react-build --prefix windows-app",
+    "test": "npm test --prefix windows-app",
+    "lint": "npm run lint --prefix windows-app",
+    "lint:fix": "npm run lint:fix --prefix windows-app",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "format:windows": "prettier --write \"windows-app/**/*.{js,jsx,json,css,md}\"",
+    "format:check:windows": "prettier --check \"windows-app/**/*.{js,jsx,json,css,md}\"",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^17.3.0",
+    "prettier": "^3.9.6"
+  },
+  "lint-staged": {
+    "*.{js,jsx,json,css,md,yml,yaml}": "prettier --write",
+    "windows-app/**/*.{js,jsx}": "eslint --fix",
+    "report-pipeline/**/*.py": [
+      "ruff format",
+      "ruff check --fix"
+    ]
   }
 }
