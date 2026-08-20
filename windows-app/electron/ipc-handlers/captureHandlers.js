@@ -913,6 +913,135 @@ async function handleInstagramFlow(captureSession, sender) {
         await new Promise(r => setTimeout(r, 1500));
       } catch (_) {}
     }
+
+    // 4. Target Account Posts & Comments Auto-Capture
+    if (!captureSession.stopRequested && !page.isClosed()) {
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: `[POSTS] Scanning @${resolvedHandle || 'target'}'s profile grid for posts and comments...`,
+        type: 'info'
+      });
+
+      // Ensure we are back on the profile page
+      if (resolvedHandle && !page.url().includes(`instagram.com/${resolvedHandle}`)) {
+        try {
+          await page.goto(`https://www.instagram.com/${resolvedHandle}/`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+          await new Promise(r => setTimeout(r, 3000));
+          await dismissInstagramPopups(page, sender, caseId);
+        } catch (_) {}
+      }
+
+      // Extract post links from profile grid
+      let postLinks = [];
+      try {
+        postLinks = await page.evaluate(() => {
+          const anchors = Array.from(document.querySelectorAll('article a[href*="/p/"], article a[href*="/reel/"], main a[href*="/p/"], main a[href*="/reel/"], a[href*="/p/"], a[href*="/reel/"]'));
+          const uniqueHrefs = [];
+          for (const a of anchors) {
+            const href = a.getAttribute('href');
+            if (href && (href.includes('/p/') || href.includes('/reel/')) && !uniqueHrefs.includes(href)) {
+              uniqueHrefs.push(href);
+            }
+          }
+          return uniqueHrefs.slice(0, 6); // Capture up to 6 recent posts
+        });
+      } catch (_) {}
+
+      if (postLinks.length === 0) {
+        sender.send('capture:log', {
+          caseId,
+          platform,
+          text: `[POSTS] No public posts found on @${resolvedHandle || 'target'}'s grid (or account is private/empty).`,
+          type: 'info'
+        });
+      } else {
+        sender.send('capture:log', {
+          caseId,
+          platform,
+          text: `[POSTS] Found ${postLinks.length} post(s) to process. Starting automated comment forensic inspection...`,
+          type: 'success'
+        });
+
+        for (let pIdx = 0; pIdx < postLinks.length; pIdx++) {
+          if (captureSession.stopRequested || page.isClosed()) break;
+          const postHref = postLinks[pIdx];
+          const postNum = pIdx + 1;
+
+          sender.send('capture:log', {
+            caseId,
+            platform,
+            text: `[POST #${postNum}] Opening post ${postNum}/${postLinks.length} (${postHref})...`,
+            type: 'info'
+          });
+
+          // Navigate to post
+          try {
+            await page.goto(`https://www.instagram.com${postHref}`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+            await new Promise(r => setTimeout(r, 3500));
+            await dismissInstagramPopups(page, sender, caseId);
+          } catch (_) {
+            continue;
+          }
+
+          // Post Overview screenshot
+          await takeAndSaveScreenshot(captureSession, `target_post_${postNum}_overview`, 1, sender);
+          if (captureSession.stopRequested || page.isClosed()) break;
+
+          // Expand hidden comments ("View more comments" / "+" buttons)
+          try {
+            await page.evaluate(() => {
+              const moreBtns = Array.from(document.querySelectorAll('ul button, div[role="button"], span[role="button"], button'));
+              for (const b of moreBtns) {
+                const txt = (b.innerText || '').toLowerCase();
+                if (txt.includes('view') || txt.includes('more comments') || txt.includes('load more') || txt.includes('view all')) {
+                  b.click();
+                }
+              }
+            });
+            await new Promise(r => setTimeout(r, 2000));
+          } catch (_) {}
+
+          // Auto-scroll comments column and capture comment snapshots
+          const maxCommentSnapshots = 4;
+          for (let cSeq = 1; cSeq <= maxCommentSnapshots; cSeq++) {
+            if (captureSession.stopRequested || page.isClosed()) break;
+            await takeAndSaveScreenshot(captureSession, `target_post_${postNum}_comments`, cSeq, sender);
+            if (cSeq < maxCommentSnapshots) {
+              sender.send('capture:log', {
+                caseId,
+                platform,
+                text: `[SCROLL] Scrolled comments for Post #${postNum} (Snapshot #${cSeq} captured). Next snapshot in 3s...`,
+                type: 'info'
+              });
+
+              // Scroll inside comments container or page
+              await page.evaluate(() => {
+                const commentsContainer = Array.from(document.querySelectorAll('article ul, div[role="dialog"] ul, ul, div')).find(
+                  el => el.scrollHeight > el.clientHeight && el.clientHeight > 150
+                );
+                if (commentsContainer) {
+                  commentsContainer.scrollTop += 500;
+                } else {
+                  window.scrollBy(0, 500);
+                }
+              });
+              await page.mouse.move(850, 450);
+              await page.mouse.wheel(0, 500);
+              await new Promise(r => setTimeout(r, 3000));
+            }
+          }
+        }
+
+        // Return to profile page after completing posts
+        if (resolvedHandle && !page.isClosed()) {
+          try {
+            await page.goto(`https://www.instagram.com/${resolvedHandle}/`, { waitUntil: 'domcontentloaded', timeout: 15000 });
+            await new Promise(r => setTimeout(r, 2000));
+          } catch (_) {}
+        }
+      }
+    }
 }
 
 /**
