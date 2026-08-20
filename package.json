@@ -1,0 +1,11 @@
+{
+  "name": "snaplog-tool-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "npm start --prefix windows-app",
+    "dev": "npm run dev --prefix windows-app",
+    "build": "npm run build --prefix windows-app",
+    "react-build": "npm run react-build --prefix windows-app"
+  }
+}
