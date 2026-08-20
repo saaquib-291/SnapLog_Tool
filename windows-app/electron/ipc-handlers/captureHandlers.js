@@ -430,18 +430,16 @@ async function handleInstagramFlow(captureSession, sender) {
   for (let i = 0; i < maxChatSnapshots; i++) {
     if (captureSession.stopRequested || page.isClosed()) break;
     await takeAndSaveScreenshot(captureSession, 'instagram_chat_thread_1', seq++, sender);
-    await new Promise(r => setTimeout(r, 3000));
-    if (captureSession.stopRequested || page.isClosed()) break;
-
-    try {
-      await page.evaluate(() => {
-        const scrollable = Array.from(document.querySelectorAll('div')).find(
-          el => el.scrollHeight > el.clientHeight && el.clientHeight > 200 && window.getComputedStyle(el).overflowY !== 'hidden'
-        );
-        if (scrollable) scrollable.scrollTop = Math.max(0, scrollable.scrollTop - 450);
-        else window.scrollBy(0, -350);
+    if (i < maxChatSnapshots - 1) {
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: `[SCROLL] Scrolled chat conversation (Snapshot #${seq - 1} captured). Next snapshot in 3s...`,
+        type: 'info'
       });
-    } catch (_) {}
+      await scrollActiveChatPane(page, 'up');
+      await new Promise(r => setTimeout(r, 3000));
+    }
   }
 }
 
@@ -568,18 +566,16 @@ async function handleFacebookFlow(captureSession, sender) {
   for (let i = 0; i < maxChatSnapshots; i++) {
     if (captureSession.stopRequested || page.isClosed()) break;
     await takeAndSaveScreenshot(captureSession, 'facebook_chat_thread_1', seq++, sender);
-    await new Promise(r => setTimeout(r, 3000));
-    if (captureSession.stopRequested || page.isClosed()) break;
-
-    try {
-      await page.evaluate(() => {
-        const scrollable = Array.from(document.querySelectorAll('div[role="main"] div, div[aria-label="Messages"]')).find(
-          el => el.scrollHeight > el.clientHeight && el.clientHeight > 200
-        );
-        if (scrollable) scrollable.scrollTop = Math.max(0, scrollable.scrollTop - 400);
-        else window.scrollBy(0, -350);
+    if (i < maxChatSnapshots - 1) {
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: `[SCROLL] Scrolled Messenger chat (Snapshot #${seq - 1} captured). Next snapshot in 3s...`,
+        type: 'info'
       });
-    } catch (_) {}
+      await scrollActiveChatPane(page, 'up');
+      await new Promise(r => setTimeout(r, 3000));
+    }
   }
 }
 
@@ -708,18 +704,16 @@ async function handleTwitterFlow(captureSession, sender) {
   for (let i = 0; i < maxChatSnapshots; i++) {
     if (captureSession.stopRequested || page.isClosed()) break;
     await takeAndSaveScreenshot(captureSession, 'twitter_chat_thread_1', seq++, sender);
-    await new Promise(r => setTimeout(r, 3000));
-    if (captureSession.stopRequested || page.isClosed()) break;
-
-    try {
-      await page.evaluate(() => {
-        const scrollable = Array.from(document.querySelectorAll('div[data-testid="messageEntry"], div[aria-label="Timeline: Messages"]')).find(
-          el => el.scrollHeight > el.clientHeight && el.clientHeight > 200
-        );
-        if (scrollable) scrollable.scrollTop = Math.max(0, scrollable.scrollTop - 400);
-        else window.scrollBy(0, -350);
+    if (i < maxChatSnapshots - 1) {
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: `[SCROLL] Scrolled Twitter DM thread (Snapshot #${seq - 1} captured). Next snapshot in 3s...`,
+        type: 'info'
       });
-    } catch (_) {}
+      await scrollActiveChatPane(page, 'up');
+      await new Promise(r => setTimeout(r, 3000));
+    }
   }
 }
 
@@ -790,21 +784,21 @@ async function handleWhatsAppFlow(captureSession, sender) {
     type: 'info'
   });
 
-  let seq = 1;
-  const maxChatSnapshots = 12;
-  for (let i = 0; i < maxChatSnapshots; i++) {
+  let wSeq = 1;
+  const maxWChatSnapshots = 12;
+  for (let i = 0; i < maxWChatSnapshots; i++) {
     if (captureSession.stopRequested || page.isClosed()) break;
-    await takeAndSaveScreenshot(captureSession, 'whatsapp_chat_thread_1', seq++, sender);
-    await new Promise(r => setTimeout(r, 3000));
-    if (captureSession.stopRequested || page.isClosed()) break;
-
-    try {
-      await page.evaluate(() => {
-        const messagePanel = document.querySelector('div[role="application"] div[tabindex="-1"], div._ajyl, div.x3ps709');
-        if (messagePanel) messagePanel.scrollTop = Math.max(0, messagePanel.scrollTop - 500);
-        else window.scrollBy(0, -350);
+    await takeAndSaveScreenshot(captureSession, 'whatsapp_chat_thread_1', wSeq++, sender);
+    if (i < maxWChatSnapshots - 1) {
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: `[SCROLL] Scrolled WhatsApp chat (Snapshot #${wSeq - 1} captured). Next snapshot in 3s...`,
+        type: 'info'
       });
-    } catch (_) {}
+      await scrollActiveChatPane(page, 'up');
+      await new Promise(r => setTimeout(r, 3000));
+    }
   }
 }
 
@@ -880,16 +874,16 @@ async function handleTelegramFlow(captureSession, sender) {
   for (let i = 0; i < maxChatSnapshots; i++) {
     if (captureSession.stopRequested || page.isClosed()) break;
     await takeAndSaveScreenshot(captureSession, 'telegram_chat_thread_1', seq++, sender);
-    await new Promise(r => setTimeout(r, 3000));
-    if (captureSession.stopRequested || page.isClosed()) break;
-
-    try {
-      await page.evaluate(() => {
-        const bubbles = document.querySelector('div.bubbles-inner, div.messages-container');
-        if (bubbles) bubbles.scrollTop = Math.max(0, bubbles.scrollTop - 500);
-        else window.scrollBy(0, -350);
+    if (i < maxChatSnapshots - 1) {
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: `[SCROLL] Scrolled Telegram chat (Snapshot #${seq - 1} captured). Next snapshot in 3s...`,
+        type: 'info'
       });
-    } catch (_) {}
+      await scrollActiveChatPane(page, 'up');
+      await new Promise(r => setTimeout(r, 3000));
+    }
   }
 }
 
@@ -950,20 +944,25 @@ async function handleGoogleFlow(captureSession, sender) {
   sender.send('capture:log', {
     caseId,
     platform,
-    text: '[CAPTURE] Commencing 3-second continuous screenshot capture for Gmail message thread...',
+    text: '[CAPTURE] Commencing 3-second continuous scroll & screenshot capture for Gmail message thread...',
     type: 'info'
   });
 
-  let seq = 1;
-  const maxChatSnapshots = 12;
-  for (let i = 0; i < maxChatSnapshots; i++) {
+  let gSeq = 1;
+  const maxGChatSnapshots = 12;
+  for (let i = 0; i < maxGChatSnapshots; i++) {
     if (captureSession.stopRequested || page.isClosed()) break;
-    await takeAndSaveScreenshot(captureSession, 'google_message_thread_1', seq++, sender);
-    await new Promise(r => setTimeout(r, 3000));
-    if (captureSession.stopRequested || page.isClosed()) break;
-    try {
-      await page.evaluate(() => window.scrollBy(0, 500));
-    } catch (_) {}
+    await takeAndSaveScreenshot(captureSession, 'google_message_thread_1', gSeq++, sender);
+    if (i < maxGChatSnapshots - 1) {
+      sender.send('capture:log', {
+        caseId,
+        platform,
+        text: `[SCROLL] Scrolled Gmail message thread (Snapshot #${gSeq - 1} captured). Next snapshot in 3s...`,
+        type: 'info'
+      });
+      await scrollActiveChatPane(page, 'down');
+      await new Promise(r => setTimeout(r, 3000));
+    }
   }
 }
 
@@ -1000,6 +999,45 @@ async function handleGenericPlatformFlow(captureSession, sender) {
 
     await captureSection(captureSession, sectionName, sectionConfig, sender);
   }
+}
+
+/**
+ * Smoothly scroll the active chat message thread pane (up for history or down)
+ * Uses native mouse wheel, keyboard PageUp/Down, and DOM scrollBy
+ */
+async function scrollActiveChatPane(page, direction = 'up') {
+  if (!page || page.isClosed()) return;
+  const deltaY = direction === 'up' ? -650 : 650;
+  const key = direction === 'up' ? 'PageUp' : 'PageDown';
+
+  try {
+    // 1. Position mouse in center of message thread area (right pane, x: ~680px, y: ~450px)
+    await page.mouse.move(680, 450);
+    // 2. Dispatch native mouse wheel scroll (triggers React virtual scroll & infinite loading)
+    await page.mouse.wheel(0, deltaY);
+    await new Promise(r => setTimeout(r, 250));
+
+    // 3. Press PageUp / PageDown key
+    await page.keyboard.press(key);
+
+    // 4. Fallback DOM element scrolling on right pane containers
+    await page.evaluate((dY) => {
+      const divs = Array.from(document.querySelectorAll('div, section, main, ul'));
+      const scrollables = divs.filter(el => {
+        const r = el.getBoundingClientRect();
+        const style = window.getComputedStyle(el);
+        const hasScroll = el.scrollHeight > el.clientHeight && el.clientHeight > 150;
+        const isRightPane = r.left > 280 && r.width > 250;
+        return hasScroll && isRightPane && style.overflowY !== 'hidden';
+      });
+
+      if (scrollables.length > 0) {
+        scrollables.forEach(s => s.scrollBy({ top: dY, behavior: 'smooth' }));
+      } else {
+        window.scrollBy({ top: dY, behavior: 'smooth' });
+      }
+    }, deltaY);
+  } catch (_) {}
 }
 
 /**
