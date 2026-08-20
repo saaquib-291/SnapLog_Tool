@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Plus,
@@ -39,6 +39,19 @@ const AddCaseModal = ({ show, onClose, onSubmit }) => {
   const [examinerId, setExaminerId] = useState('examiner001');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const titleInputRef = useRef(null);
+
+  useEffect(() => {
+    if (show) {
+      // Electron Windows fix: explicitly focus input upon modal mount
+      const timer = setTimeout(() => {
+        if (titleInputRef.current) {
+          titleInputRef.current.focus();
+        }
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [show]);
 
   const handleClose = () => {
     onClose();
@@ -109,6 +122,8 @@ const AddCaseModal = ({ show, onClose, onSubmit }) => {
             <div className="form-group">
               <label className="form-label">Case Title / FIR No. *</label>
               <input
+                ref={titleInputRef}
+                autoFocus
                 className="form-input"
                 type="text"
                 placeholder="e.g. Cyber Harassment & Extortion Investigation (FIR-2026/089)"
