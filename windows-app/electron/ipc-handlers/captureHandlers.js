@@ -101,6 +101,7 @@ async function handleStart(event, data) {
 
     // Retrieve credentials strictly from in-memory payload (never stored in DB)
     let creds = data.credentials;
+    const targetUsername = (creds && creds.username) ? creds.username.replace(/^@/, '').trim() : '';
 
     // Auto-fill login credentials if provided in memory
     if (creds && creds.username) {
@@ -116,13 +117,14 @@ async function handleStart(event, data) {
       });
     }
 
-    // Wait for authentication and session readiness (including OTP/2FA if needed)
-    await new Promise(resolve => setTimeout(resolve, 6000));
+    // Wait for initial page response
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
     // Create capture session tracking
     const captureSession = {
       caseId,
       platform,
+      targetUsername,
       platformConfig,
       startedAt: new Date(),
       status: 'in_progress',
@@ -181,37 +183,41 @@ async function captureSections(captureSession, sender) {
   const captureKey = `${caseId}-${platform}`;
 
   try {
-    const sections = platformConfig.sections || {};
+    // If platform is Instagram, run the dedicated forensic pipeline
+    if (platform === 'instagram') {
+      await handleInstagramFlow(captureSession, sender);
+    } else {
+      const sections = platformConfig.sections || {};
 
-    // Process each section
-    for (const [sectionName, sectionConfig] of Object.entries(sections)) {
-      // Check if stop was requested or browser was closed
-      if (captureSession.stopRequested || !browserEngine.browser || !browserEngine.page || browserEngine.page.isClosed()) {
-        break;
-      }
-
-      captureSession.currentSection = sectionName;
-      captureSession.status = `capturing_${sectionName}`;
-
-      sender.send('capture:log', {
-        caseId,
-        platform,
-        text: `[NAV] Navigating to section: ${sectionName.toUpperCase()}`,
-        type: 'info'
-      });
-
-      // Navigate to section if nav_selector exists
-      if (sectionConfig.nav_selector) {
-        try {
-          await browserEngine.click(sectionConfig.nav_selector);
-          await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for navigation
-        } catch (navError) {
-          console.warn(`Could not navigate to ${sectionName} using nav_selector:`, navError.message);
+      // Process each section
+      for (const [sectionName, sectionConfig] of Object.entries(sections)) {
+        if (captureSession.stopRequested || !browserEngine.browser || !browserEngine.page || browserEngine.page.isClosed()) {
+          break;
         }
-      }
 
-      // Capture this section
-      await captureSection(captureSession, sectionName, sectionConfig, sender);
+        captureSession.currentSection = sectionName;
+        captureSession.status = `capturing_${sectionName}`;
+
+        sender.send('capture:log', {
+          caseId,
+          platform,
+          text: `[NAV] Navigating to section: ${sectionName.toUpperCase()}`,
+          type: 'info'
+        });
+
+        // Navigate to section if nav_selector exists
+        if (sectionConfig.nav_selector) {
+          try {
+            await browserEngine.click(sectionConfig.nav_selector);
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          } catch (navError) {
+            console.warn(`Could not navigate to ${sectionName} using nav_selector:`, navError.message);
+          }
+        }
+
+        // Capture this section
+        await captureSection(captureSession, sectionName, sectionConfig, sender);
+      }
     }
 
     // Mark as completed
@@ -221,7 +227,7 @@ async function captureSections(captureSession, sender) {
     sender.send('capture:log', {
       caseId,
       platform,
-      text: `[SUCCESS] Evidence capture complete for ${platform.toUpperCase()}. Progress is over.`,
+      text: `[SUCCESS] Evidence capture complete for ${platform.toUpperCase()}. Forensic session finished.`,
       type: 'success'
     });
 
@@ -256,6 +262,283 @@ async function captureSections(captureSession, sender) {
     } catch (_) {}
     throw error;
   }
+}
+
+/**
+ * Dedicated Instagram Forensic Pipeline:
+ * 1. Watches for & handles CAPTCHA / 2FA / Login resolution
+ * 2. Navigates to Account Profile
+ * 3. Extracts Followers, Following, and Posts/Activity Metrics
+ * 4. Navigates to Direct Messages (Chats)
+ * 5. Opens 1st Chat thread in inbox
+ * 6. Continuous 3-second auto-scrolling screenshot capture
+ */
+async function handleInstagramFlow(captureSession, sender) {
+  const { caseId, platform } = captureSession;
+  const page = browserEngine.page;
+  if (!page || page.isClosed()) return;
+
+  // Step 1: Wait for Login & Check for CAPTCHA / 2FA
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[AUTH] Checking session & monitoring for CAPTCHA / 2FA challenges...',
+    type: 'info'
+  });
+
+  const loggedIn = await waitForInstagramLoginOrCaptcha(page, sender, caseId);
+  if (!loggedIn) {
+    throw new Error('Authentication not completed or browser closed during verification.');
+  }
+
+  // Dismiss initial popup dialogs ("Save Info", "Turn on notifications")
+  await dismissInstagramPopups(page, sender, caseId);
+
+  // Step 2: Go to Account Profile
+  let username = captureSession.targetUsername;
+  if (!username) {
+    try {
+      const profileLink = page.locator('a[href^="/"][role="link"]:has(svg[aria-label*="Profile" i]), a[href^="/"]:has(img[alt*="profile" i])').first();
+      if (await profileLink.isVisible({ timeout: 2500 })) {
+        const href = await profileLink.getAttribute('href');
+        if (href) username = href.replace(/\//g, '');
+      }
+    } catch (_) {}
+  }
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: `[NAV] Navigating to target Instagram Profile${username ? ` (@${username})` : ''}...`,
+    type: 'info'
+  });
+
+  if (username) {
+    await page.goto(`https://www.instagram.com/${username}/`, { waitUntil: 'domcontentloaded' });
+  } else {
+    try {
+      const profileBtn = page.locator('svg[aria-label*="Profile" i]').first();
+      await profileBtn.click();
+    } catch (_) {
+      await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded' });
+    }
+  }
+
+  await new Promise(r => setTimeout(r, 3500));
+  await dismissInstagramPopups(page, sender, caseId);
+
+  // Step 3: Extract Profile Metrics & Capture Profile Screenshot
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[PROFILE] Extracting follower/following counts, post stats & profile activity...',
+    type: 'info'
+  });
+
+  let metrics = { posts: 'N/A', followers: 'N/A', following: 'N/A' };
+  try {
+    metrics = await page.evaluate(() => {
+      const headerText = document.querySelector('header')?.innerText || document.body.innerText;
+      const postsMatch = headerText.match(/([\d,\.KkMm]+)\s*(?:posts|post)/i);
+      const followersMatch = headerText.match(/([\d,\.KkMm]+)\s*(?:followers|follower)/i);
+      const followingMatch = headerText.match(/([\d,\.KkMm]+)\s*(?:following)/i);
+      return {
+        posts: postsMatch ? postsMatch[1] : 'N/A',
+        followers: followersMatch ? followersMatch[1] : 'N/A',
+        following: followingMatch ? followingMatch[1] : 'N/A'
+      };
+    });
+  } catch (_) {}
+
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: `[PROFILE METRICS] 📊 Posts: ${metrics.posts} | Followers: ${metrics.followers} | Following: ${metrics.following}`,
+    type: 'success'
+  });
+
+  // Capture Profile Overview Screenshot
+  await takeAndSaveScreenshot(captureSession, 'instagram_profile_overview', 1, sender);
+
+  if (captureSession.stopRequested || page.isClosed()) return;
+
+  // Step 4: Navigate to Direct Messages / Chats
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[NAV] Navigating to Instagram Direct Messages (Chats Inbox)...',
+    type: 'info'
+  });
+
+  await page.goto('https://www.instagram.com/direct/inbox/', { waitUntil: 'domcontentloaded' });
+  await new Promise(r => setTimeout(r, 4000));
+  await dismissInstagramPopups(page, sender, caseId);
+
+  // Step 5: Locate and Click the 1st Chat in the inbox list
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[CHATS] Locating first conversation thread in the inbox...',
+    type: 'info'
+  });
+
+  const chatSelectors = [
+    'div[role="list"] > div[role="button"]',
+    'div[role="list"] a',
+    'div.x1n2onr6 a[href*="/direct/t/"]',
+    'div[aria-label="Chats"] div[role="button"]',
+    'div[role="grid"] div[role="row"]',
+    'div[role="button"]:has(img[alt*="profile" i])'
+  ];
+
+  let chatOpened = false;
+  for (const cSel of chatSelectors) {
+    try {
+      const firstChat = page.locator(cSel).first();
+      if (await firstChat.isVisible({ timeout: 2500 })) {
+        await firstChat.click();
+        chatOpened = true;
+        sender.send('capture:log', {
+          caseId,
+          platform,
+          text: '[CHATS] Opened 1st conversation thread. Loading chat message history...',
+          type: 'success'
+        });
+        break;
+      }
+    } catch (_) {}
+  }
+
+  if (!chatOpened) {
+    sender.send('capture:log', {
+      caseId,
+      platform,
+      text: '[CHATS] Capturing active inbox viewport for chat messages...',
+      type: 'info'
+    });
+  }
+
+  await new Promise(r => setTimeout(r, 3000));
+
+  // Step 6: Auto-scroll 1st Chat & Capture Screenshots every 3 seconds
+  sender.send('capture:log', {
+    caseId,
+    platform,
+    text: '[CAPTURE] Starting 3-second continuous scroll & screenshot capture for Chat Thread #1...',
+    type: 'info'
+  });
+
+  let seq = 1;
+  const maxChatSnapshots = 12; // 12 captures * 3s interval = 36s of continuous evidence capture
+
+  for (let i = 0; i < maxChatSnapshots; i++) {
+    if (captureSession.stopRequested || page.isClosed()) break;
+
+    // Take screenshot
+    await takeAndSaveScreenshot(captureSession, 'instagram_chat_thread_1', seq++, sender);
+
+    // Wait 3 seconds
+    await new Promise(r => setTimeout(r, 3000));
+    if (captureSession.stopRequested || page.isClosed()) break;
+
+    // Auto-scroll chat history up/down
+    try {
+      await page.evaluate(() => {
+        const scrollable = Array.from(document.querySelectorAll('div')).find(
+          el => el.scrollHeight > el.clientHeight && el.clientHeight > 200 && window.getComputedStyle(el).overflowY !== 'hidden'
+        );
+        if (scrollable) {
+          scrollable.scrollTop = Math.max(0, scrollable.scrollTop - 450);
+        } else {
+          window.scrollBy(0, -350);
+        }
+      });
+    } catch (_) {}
+  }
+}
+
+/**
+ * Dismiss common Instagram popups ("Not Now", "Save Info")
+ */
+async function dismissInstagramPopups(page, sender, caseId) {
+  if (!page || page.isClosed()) return;
+  const popupSelectors = [
+    'button:has-text("Not Now")',
+    'button:has-text("Not now")',
+    'button:has-text("Cancel")',
+    'button:has-text("Save info")',
+    'button:has-text("Save Info")',
+    'div[role="dialog"] button:has-text("Not Now")',
+    'div[role="dialog"] button:has-text("Not now")',
+    'button._a9--',
+  ];
+
+  for (const pSel of popupSelectors) {
+    try {
+      const btn = page.locator(pSel).first();
+      if (await btn.isVisible({ timeout: 1200 })) {
+        await btn.click();
+        sender.send('capture:log', { caseId, platform: 'instagram', text: '[INFO] Dismissed modal prompt.', type: 'info' });
+        await new Promise(r => setTimeout(r, 600));
+      }
+    } catch (_) {}
+  }
+}
+
+/**
+ * Wait for Instagram login or notify user to solve CAPTCHA / 2FA
+ */
+async function waitForInstagramLoginOrCaptcha(page, sender, caseId) {
+  if (!page || page.isClosed()) return false;
+
+  let captchaNotified = false;
+  const maxWaitMs = 180000; // 3 minutes wait time for CAPTCHA/2FA
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < maxWaitMs) {
+    if (page.isClosed()) return false;
+
+    const url = page.url();
+
+    // Check if successfully past login / challenge screens
+    if (!url.includes('/accounts/login') && !url.includes('/challenge') && !url.includes('/checkpoint')) {
+      sender.send('capture:log', {
+        caseId,
+        platform: 'instagram',
+        text: '[AUTH] Login verified successfully! Proceeding with forensic capture.',
+        type: 'success'
+      });
+      return true;
+    }
+
+    // Detect CAPTCHA or Security Checkpoint
+    const hasCaptcha = await page.evaluate(() => {
+      const text = document.body?.innerText || '';
+      return (
+        text.includes('Confirm that it’s you') ||
+        text.includes('Help us confirm it') ||
+        text.includes('Security Check') ||
+        text.includes('Enter code') ||
+        text.includes('two-factor') ||
+        text.includes('robot') ||
+        !!document.querySelector('iframe[src*="recaptcha"], iframe[src*="arkose"], iframe[src*="captcha"], #captcha')
+      );
+    });
+
+    if (hasCaptcha && !captchaNotified) {
+      captchaNotified = true;
+      sender.send('capture:log', {
+        caseId,
+        platform: 'instagram',
+        text: '[SECURITY] ⚠️ CAPTCHA / 2FA Challenge detected! Please complete the verification in the Chromium window. The capture suite will automatically resume once passed.',
+        type: 'warn'
+      });
+    }
+
+    await new Promise(r => setTimeout(r, 1500));
+  }
+
+  return false;
 }
 
 /**
