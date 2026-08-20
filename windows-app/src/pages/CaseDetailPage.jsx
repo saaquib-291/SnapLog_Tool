@@ -351,7 +351,7 @@ const CaseDetailPage = () => {
                 <input
                   className="form-input"
                   type="text"
-                  placeholder="e.g. amxn360 or victim@email.com"
+                  placeholder="e.g. target_handle or user@domain.com"
                   value={targetUsername}
                   onChange={(e) => setTargetUsername(e.target.value)}
                   style={{ paddingLeft: '2.25rem', fontSize: '0.8125rem' }}
@@ -403,7 +403,7 @@ const CaseDetailPage = () => {
                 <input
                   className="form-input"
                   type="text"
-                  placeholder="e.g. aditya, diganth, target_user"
+                  placeholder="e.g. contact_handle or target_user"
                   value={targetChatUser}
                   onChange={(e) => setTargetChatUser(e.target.value)}
                   style={{ paddingLeft: '2.25rem', fontSize: '0.8125rem' }}
