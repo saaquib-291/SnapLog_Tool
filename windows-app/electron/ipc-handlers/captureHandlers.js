@@ -354,72 +354,69 @@ async function handleInstagramFlow(captureSession, sender) {
   await dismissInstagramPopups(page, sender, caseId);
 
   // 1. Dismiss any open note or modal prompt if visible
-  try {
-    const closeBtn = page.locator('div[role="dialog"] button, svg[aria-label="Close"], button:has-text("Close")').first();
-    if (await closeBtn.isVisible({ timeout: 1000 })) {
-      await closeBtn.click();
-      await new Promise(r => setTimeout(r, 600));
-    }
-  } catch (_) {}
+  await dismissInstagramPopups(page, sender, caseId);
 
   sender.send('capture:log', {
     caseId,
     platform,
-    text: '[CHATS] Locating 1st conversation thread under Messages list (filtering out Notes)...',
+    text: '[CHATS] Locating 1st conversation thread under Messages list...',
     type: 'info'
   });
 
-  // 2. Strictly target direct chat thread links (a[href*="/direct/t/"]), NOT top Note avatar buttons
-  const chatThreadSelectors = [
-    'a[href*="/direct/t/"]',
-    'div[role="list"] a[href*="/direct/t/"]',
-    'div[role="grid"] a[href*="/direct/t/"]',
-    'div[aria-label="Chats"] a[href*="/direct/t/"]',
-    'div[aria-label="Direct thread list"] a[href*="/direct/t/"]'
-  ];
+  // 2. Identify exact pixel coordinates of 1st chat conversation below Messages heading
+  let clickTarget = null;
+  try {
+    clickTarget = await page.evaluate(() => {
+      // Find "Messages" heading
+      const all = Array.from(document.querySelectorAll('span, div, h2, h3'));
+      const msgHdr = all.find(el => (el.textContent || '').trim() === 'Messages' && el.children.length === 0);
+      const hdrBottom = msgHdr ? msgHdr.getBoundingClientRect().bottom : 220;
 
-  let threadOpened = false;
-  for (const cSel of chatThreadSelectors) {
-    try {
-      const firstChat = page.locator(cSel).first();
-      if (await firstChat.isVisible({ timeout: 3000 })) {
-        await firstChat.click();
-        threadOpened = true;
-        sender.send('capture:log', {
-          caseId,
-          platform,
-          text: '[CHATS] Opened 1st chat conversation thread. Loading message history...',
-          type: 'success'
-        });
-        break;
-      }
-    } catch (_) {}
-  }
-
-  // Fallback: Locate via DOM evaluation under "Messages" heading
-  if (!threadOpened) {
-    try {
-      const opened = await page.evaluate(() => {
-        const directLink = document.querySelector('a[href*="/direct/t/"]');
-        if (directLink) {
-          directLink.click();
-          return true;
-        }
-        return false;
+      // Find all rows in left sidebar below the Messages heading
+      const candidates = Array.from(document.querySelectorAll('a[href*="/direct/t/"], div[role="button"], div[role="listitem"], div[tabindex="0"]'));
+      const validRows = candidates.filter(row => {
+        const r = row.getBoundingClientRect();
+        return r.left < 450 && r.top >= (hdrBottom - 10) && r.height >= 40 && r.width >= 120;
       });
-      if (opened) {
-        threadOpened = true;
-        sender.send('capture:log', {
-          caseId,
-          platform,
-          text: '[CHATS] Opened 1st chat conversation via direct thread link.',
-          type: 'success'
-        });
+
+      if (validRows.length > 0) {
+        const target = validRows[0];
+        target.scrollIntoView({ block: 'center' });
+        const r = target.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2, hasDirectLink: !!target.closest('a[href*="/direct/t/"]') };
+      }
+
+      // Fallback: any direct thread link
+      const directLink = document.querySelector('a[href*="/direct/t/"]');
+      if (directLink) {
+        const r = directLink.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2, hasDirectLink: true };
+      }
+
+      return null;
+    });
+  } catch (_) {}
+
+  if (clickTarget && clickTarget.x > 0 && clickTarget.y > 0) {
+    sender.send('capture:log', {
+      caseId,
+      platform,
+      text: '[CHATS] Found 1st conversation thread. Clicking to open chat history...',
+      type: 'info'
+    });
+    await page.mouse.click(clickTarget.x, clickTarget.y);
+  } else {
+    // Fallback locator clicks
+    try {
+      const fallback = page.locator('a[href*="/direct/t/"], div[role="list"] a, div[aria-label="Chats"] div[role="button"]').first();
+      if (await fallback.isVisible({ timeout: 2500 })) {
+        await fallback.click({ force: true });
       }
     } catch (_) {}
   }
 
-  await new Promise(r => setTimeout(r, 3500));
+  await new Promise(r => setTimeout(r, 4000));
+  await dismissInstagramPopups(page, sender, caseId);
 
   sender.send('capture:log', {
     caseId,

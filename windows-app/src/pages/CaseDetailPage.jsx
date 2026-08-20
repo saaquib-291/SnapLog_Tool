@@ -47,26 +47,21 @@ const CaseDetailPage = () => {
         const data = await caseService.getCaseById(id);
         setCaseData(data);
 
-        // Pre-populate mock captured evidence if already completed
-        if (data?.platforms?.includes('instagram')) {
-          setEvidenceList([
-            {
-              id: 'SCR-001',
-              section: 'Timeline / Profile',
-              platform: 'Instagram',
-              timestamp: new Date().toISOString(),
-              hash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
-              file: 'instagram_timeline_001_20260816T143000.png'
-            },
-            {
-              id: 'SCR-002',
-              section: 'Followers List',
-              platform: 'Instagram',
-              timestamp: new Date(Date.now() - 30000).toISOString(),
-              hash: '5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8',
-              file: 'instagram_followers_002_20260816T143030.png'
-            }
-          ]);
+        // Load real captured evidence artifacts from database
+        if (data && Array.isArray(data.artifacts) && data.artifacts.length > 0) {
+          setEvidenceList(
+            data.artifacts.map((a, idx) => ({
+              id: a.id ? (a.id.startsWith('SCR-') ? a.id : `SCR-${String(a.sequenceNumber || idx + 1).padStart(3, '0')}`) : `SCR-${String(idx + 1).padStart(3, '0')}`,
+              rawId: a.id,
+              section: (a.section || 'Capture').replace(/_/g, ' '),
+              platform: a.platform || data.targetPlatform || 'Instagram',
+              timestamp: a.timestamp || data.createdAt,
+              hash: a.hash || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+              file: a.filePath || ''
+            }))
+          );
+        } else {
+          setEvidenceList([]);
         }
       } catch (err) {
         setError('Failed to load case: ' + err.message);
@@ -81,6 +76,27 @@ const CaseDetailPage = () => {
   // Real-time live log & event listeners from Playwright / Electron backend
   useEffect(() => {
     if (!window.electronAPI) return;
+
+    const unsubProgress = window.electronAPI.onCaptureProgress?.((data) => {
+      if (data && data.artifact) {
+        const art = data.artifact;
+        setEvidenceList((prev) => {
+          if (prev.some(item => item.rawId === art.id || item.hash === art.hash)) {
+            return prev;
+          }
+          const newEntry = {
+            id: `SCR-${String(art.sequenceNumber || prev.length + 1).padStart(3, '0')}`,
+            rawId: art.id,
+            section: (art.section || data.section || 'Capture').replace(/_/g, ' '),
+            platform: art.platform || data.platform || 'Instagram',
+            timestamp: art.timestamp || new Date().toISOString(),
+            hash: art.hash,
+            file: art.filePath
+          };
+          return [newEntry, ...prev];
+        });
+      }
+    });
 
     const unsubLog = window.electronAPI.onCaptureLog?.((data) => {
       if (data && data.text) {
@@ -107,6 +123,7 @@ const CaseDetailPage = () => {
     });
 
     return () => {
+      if (typeof unsubProgress === 'function') unsubProgress();
       if (typeof unsubLog === 'function') unsubLog();
       if (typeof unsubBrowserClosed === 'function') unsubBrowserClosed();
       if (typeof unsubCompleted === 'function') unsubCompleted();
