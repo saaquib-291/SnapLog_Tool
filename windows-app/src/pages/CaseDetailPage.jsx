@@ -78,24 +78,33 @@ const CaseDetailPage = () => {
     if (!window.electronAPI) return;
 
     const unsubProgress = window.electronAPI.onCaptureProgress?.((data) => {
-      if (data && data.artifact) {
-        const art = data.artifact;
-        setEvidenceList((prev) => {
-          if (prev.some(item => item.rawId === art.id || item.hash === art.hash)) {
-            return prev;
-          }
-          const newEntry = {
-            id: `SCR-${String(art.sequenceNumber || prev.length + 1).padStart(3, '0')}`,
-            rawId: art.id,
-            section: (art.section || data.section || 'Capture').replace(/_/g, ' '),
-            platform: art.platform || data.platform || 'Instagram',
-            timestamp: art.timestamp || new Date().toISOString(),
-            hash: art.hash,
-            file: art.filePath
-          };
-          return [newEntry, ...prev];
-        });
-      }
+      if (!data) return;
+      const art = data.artifact || data;
+      const hash = art.hash || data.hash;
+      if (!hash) return;
+
+      const seq = art.sequenceNumber || data.screenshotNumber || data.sequenceNumber;
+      const section = (art.section || data.section || 'Capture').replace(/_/g, ' ');
+      const platform = art.platform || data.platform || 'Instagram';
+      const timestamp = art.timestamp || data.timestamp || new Date().toISOString();
+      const filePath = art.filePath || data.filePath || '';
+      const rawId = art.id || data.id || `SCR-${String(seq || 1).padStart(3, '0')}`;
+
+      setEvidenceList((prev) => {
+        if (prev.some(item => (item.rawId && item.rawId === rawId) || (item.hash && item.hash === hash))) {
+          return prev;
+        }
+        const newEntry = {
+          id: `SCR-${String(seq || prev.length + 1).padStart(3, '0')}`,
+          rawId,
+          section,
+          platform,
+          timestamp,
+          hash,
+          file: filePath
+        };
+        return [newEntry, ...prev];
+      });
     });
 
     const unsubLog = window.electronAPI.onCaptureLog?.((data) => {

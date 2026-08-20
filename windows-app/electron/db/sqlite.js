@@ -183,7 +183,7 @@ function getAllCases() {
 }
 
 /**
- * Get case by ID from SQLite
+ * Get case by ID from SQLite with associated evidence artifacts
  */
 function getCaseById(caseId) {
   if (!db) return null;
@@ -200,6 +200,18 @@ function getCaseById(caseId) {
       }
     }
     stmt.free();
+
+    if (result) {
+      const artStmt = db.prepare('SELECT id, case_id as caseId, platform, section, sequence_number as sequenceNumber, file_path as filePath, sha256_hash as hash, timestamp FROM evidence_artifacts WHERE case_id = ? ORDER BY sequence_number ASC, timestamp ASC');
+      artStmt.bind([caseId]);
+      const artifacts = [];
+      while (artStmt.step()) {
+        artifacts.push(artStmt.getAsObject());
+      }
+      artStmt.free();
+      result.artifacts = artifacts;
+    }
+
     return result;
   } catch (err) {
     console.error('[SQLITE] Error getting case by ID:', err.message);

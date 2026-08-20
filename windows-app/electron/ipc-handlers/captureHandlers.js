@@ -1372,8 +1372,18 @@ async function takeAndSaveScreenshot(captureSession, sectionName, sequenceNumber
       section: sectionName,
       screenshotNumber: sequenceNumber,
       filePath: filePath,
-      timestamp: new Date().toISOString(),
-      hash: metadata.sha256_hash
+      timestamp: metadata.timestamp || new Date().toISOString(),
+      hash: metadata.sha256_hash,
+      artifact: {
+        id: metadata.screenshot_id || `SCR-${String(sequenceNumber).padStart(3, '0')}`,
+        caseId: captureSession.caseId,
+        platform: captureSession.platform,
+        section: sectionName,
+        sequenceNumber: sequenceNumber,
+        filePath: filePath,
+        hash: metadata.sha256_hash,
+        timestamp: metadata.timestamp || new Date().toISOString()
+      }
     });
 
     sender.send('capture:log', {
