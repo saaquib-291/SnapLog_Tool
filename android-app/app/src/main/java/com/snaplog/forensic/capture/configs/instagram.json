@@ -1,0 +1,26 @@
+{
+  "platform": "instagram",
+  "package": "com.instagram.android",
+  "sections": [
+    {
+      "name": "timeline",
+      "targets": [
+        {
+          "type": "id",
+          "value": "com.instagram.android:id/feed_view_pager",
+          "action": "scroll"
+        }
+      ]
+    },
+    {
+      "name": "profile",
+      "targets": [
+        {
+          "type": "text",
+          "value": "Profile",
+          "action": "tap"
+        }
+      ]
+    }
+  ]
+}

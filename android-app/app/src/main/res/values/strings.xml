@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Snaplog</string>
+    <string name="accessibility_service_description">SnapLog uses accessibility services to automatically navigate social media apps for forensic evidence capture.</string>
 </resources>

@@ -64,6 +64,13 @@ dependencies {
 
     implementation("androidx.navigation:navigation-compose:2.8.0")
 
+    val room_version = "2.6.1"
+    implementation("androidx.room:room-runtime:$room_version")
+    implementation("androidx.room:room-ktx:$room_version")
+    annotationProcessor("androidx.room:room-compiler:$room_version")
+    // For Kotlin Symbol Processing (KSP) if used, but let's stick to kapt/annotationProcessor for now
+    // implementation("androidx.room:room-compiler:$room_version")
+
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
