@@ -19,8 +19,8 @@
   "properties": {
     "screenshot_id": {
       "type": "string",
-      "description": "Unique identifier for this screenshot (UUID v4).",
-      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+      "description": "Unique identifier for this screenshot.",
+      "minLength": 1
     },
     "case_id": {
       "type": "string",
@@ -44,8 +44,8 @@
     },
     "section": {
       "type": "string",
-      "description": "Content section captured. Must match a value from section_enum.json.",
-      "enum": ["timeline", "posts", "messages", "friends", "followers", "following", "account_info"]
+      "description": "Content section captured.",
+      "minLength": 1
     },
     "sequence_number": {
       "type": "integer",

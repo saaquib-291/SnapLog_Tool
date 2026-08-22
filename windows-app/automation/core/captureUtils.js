@@ -3,7 +3,6 @@
 const crypto = require('crypto');
 const fs = require('fs').promises;
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
 
 /**
  * Generates a screenshot file path based on the required format:
@@ -64,8 +63,8 @@ async function generateMetadata({ caseId, examinerId, platform, section, sequenc
 
   // Generate valid ISO 8601 timestamp
   const isoTimestamp = new Date().toISOString();
-  const cleanId = `SCR-${(platform || 'EV').slice(0, 2).toUpperCase()}-${String(sequenceNumber || 1).padStart(3, '0')}`;
-
+  // Include section and a random string to prevent SQLite ID collisions
+  const cleanId = `SCR-${(platform || 'EV').slice(0, 2).toUpperCase()}-${(section || 'X').replace(/[^a-zA-Z0-9]/g, '').slice(0, 5).toUpperCase()}-${String(sequenceNumber || 1).padStart(3, '0')}-${crypto.randomBytes(3).toString('hex')}`;
   return {
     screenshot_id: cleanId,
     case_id: caseId,
